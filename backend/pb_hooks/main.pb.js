@@ -958,4 +958,280 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
   }
 });
 
-console.log("Elastic Git Sync hooks loaded");
+// Auto-sync cron job - runs every minute to check for scheduled syncs
+cronAdd("auto_sync_scheduler", "* * * * *", function() {
+  console.log("[Auto-Sync] Checking for scheduled syncs...");
+
+  try {
+    // Find all active projects with auto_sync enabled
+    var projects = $app.findRecordsByFilter(
+      "projects",
+      "is_active = true && sync_enabled = true && auto_sync_interval > 0",
+      "",
+      100,
+      0
+    );
+
+    console.log("[Auto-Sync] Found " + projects.length + " projects with auto-sync enabled");
+
+    var now = new Date();
+
+    for (var i = 0; i < projects.length; i++) {
+      var project = projects[i];
+      var intervalMinutes = project.get("auto_sync_interval") || 0;
+
+      if (intervalMinutes <= 0) continue;
+
+      // Find environments for this project
+      var environments = [];
+      try {
+        environments = $app.findRecordsByFilter(
+          "environments",
+          "project = '" + project.id + "'",
+          "",
+          10,
+          0
+        );
+      } catch (err) {
+        console.log("[Auto-Sync] Error finding environments for project " + project.id + ": " + String(err));
+        continue;
+      }
+
+      for (var e = 0; e < environments.length; e++) {
+        var env = environments[e];
+        var envName = env.get("name");
+        var lastSyncField = envName === "production" ? "last_sync_prod" : "last_sync_test";
+        var lastSyncStr = project.get(lastSyncField);
+
+        var needsSync = false;
+
+        if (!lastSyncStr) {
+          // Never synced before
+          needsSync = true;
+        } else {
+          var lastSync = new Date(lastSyncStr);
+          var diffMinutes = (now.getTime() - lastSync.getTime()) / (1000 * 60);
+          needsSync = diffMinutes >= intervalMinutes;
+        }
+
+        if (needsSync) {
+          console.log("[Auto-Sync] Triggering sync for project " + project.get("name") + " env " + envName);
+
+          try {
+            // Create sync job record
+            var collection = $app.findCollectionByNameOrId("sync_jobs");
+            var job = new Record(collection);
+
+            job.set("project", project.id);
+            job.set("type", "scheduled");
+            job.set("direction", "elastic_to_git");
+            job.set("status", "running");
+            job.set("triggered_by", "scheduler");
+            job.set("started_at", now.toISOString());
+            job.set("environment", env.id);
+            $app.save(job);
+
+            // Get project details
+            var elasticId = project.get("elastic_instance");
+            var gitRepoId = project.get("git_repository");
+            var elasticSpace = env.get("elastic_space");
+            var gitBranch = env.get("git_branch");
+            var gitPath = project.get("git_path") || "";
+
+            // Get elastic instance
+            var elastic = $app.findRecordById("elastic_instances", elasticId);
+            var elasticUrl = elastic.get("url").replace(/\/$/, "");
+            var apiKey = elastic.get("api_key");
+
+            // Get git repository
+            var gitRepo = $app.findRecordById("git_repositories", gitRepoId);
+            var gitProvider = gitRepo.get("provider");
+            var gitToken = gitRepo.get("access_token");
+            var gitRepoUrl = gitRepo.get("url").replace(/\.git$/, "");
+
+            var summary = { exported: 0 };
+
+            // Fetch rules from Elastic
+            var elasticRules = [];
+            var elasticApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find?per_page=100";
+
+            try {
+              var elasticResp = $http.send({
+                url: elasticApiUrl,
+                method: "GET",
+                headers: {
+                  "Authorization": "ApiKey " + apiKey,
+                  "kbn-xsrf": "true",
+                  "Content-Type": "application/json"
+                },
+                timeout: 30
+              });
+
+              if (elasticResp.statusCode === 200) {
+                var elasticData = JSON.parse(elasticResp.raw);
+                elasticRules = elasticData.data || [];
+              }
+            } catch (err) {
+              console.log("[Auto-Sync] Error fetching Elastic rules: " + String(err));
+            }
+
+            // Export to Git (GitLab)
+            if (gitProvider === "gitlab" && elasticRules.length > 0) {
+              var glMatch = gitRepoUrl.match(/gitlab\.com\/(.+?)$/);
+              if (glMatch) {
+                var glProjectPath = encodeURIComponent(glMatch[1]);
+
+                // Commit each rule
+                for (var r = 0; r < elasticRules.length; r++) {
+                  var rule = elasticRules[r];
+                  var ruleId = rule.rule_id || rule.id;
+                  var fileName = ruleId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json";
+                  var filePath = gitPath ? gitPath + "/" + fileName : fileName;
+
+                  var ruleContent = JSON.stringify(rule, null, 2);
+                  var encodedContent = encodeURIComponent(ruleContent).replace(/%([0-9A-F]{2})/g, function(match, p1) {
+                    return String.fromCharCode('0x' + p1);
+                  });
+                  var base64Content = btoa(encodedContent);
+
+                  // Check if file exists
+                  var fileUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(filePath) + "?ref=" + encodeURIComponent(gitBranch);
+                  var fileExists = false;
+                  try {
+                    var fileResp = $http.send({
+                      url: fileUrl,
+                      method: "GET",
+                      headers: { "PRIVATE-TOKEN": gitToken },
+                      timeout: 10
+                    });
+                    fileExists = fileResp.statusCode === 200;
+                  } catch (err) {}
+
+                  // Create or update file
+                  var commitUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(filePath);
+                  try {
+                    var commitResp = $http.send({
+                      url: commitUrl,
+                      method: fileExists ? "PUT" : "POST",
+                      headers: {
+                        "PRIVATE-TOKEN": gitToken,
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify({
+                        branch: gitBranch,
+                        content: base64Content,
+                        encoding: "base64",
+                        commit_message: "[Auto-Sync] " + (fileExists ? "Update" : "Add") + " rule: " + (rule.name || ruleId)
+                      }),
+                      timeout: 15
+                    });
+
+                    if (commitResp.statusCode === 200 || commitResp.statusCode === 201) {
+                      summary.exported++;
+                    }
+                  } catch (err) {
+                    console.log("[Auto-Sync] Error committing rule: " + String(err));
+                  }
+                }
+              }
+            }
+
+            // Export to Git (GitHub)
+            if (gitProvider === "github" && elasticRules.length > 0) {
+              var ghMatch = gitRepoUrl.match(/github\.com\/(.+?)$/);
+              if (ghMatch) {
+                var ghRepoPath = ghMatch[1];
+
+                for (var r = 0; r < elasticRules.length; r++) {
+                  var rule = elasticRules[r];
+                  var ruleId = rule.rule_id || rule.id;
+                  var fileName = ruleId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json";
+                  var filePath = gitPath ? gitPath + "/" + fileName : fileName;
+
+                  var ruleContent = JSON.stringify(rule, null, 2);
+                  var base64Content = btoa(unescape(encodeURIComponent(ruleContent)));
+
+                  // Check if file exists
+                  var fileUrl = "https://api.github.com/repos/" + ghRepoPath + "/contents/" + filePath + "?ref=" + encodeURIComponent(gitBranch);
+                  var fileSha = null;
+                  try {
+                    var fileResp = $http.send({
+                      url: fileUrl,
+                      method: "GET",
+                      headers: {
+                        "Authorization": "Bearer " + gitToken,
+                        "Accept": "application/vnd.github.v3+json"
+                      },
+                      timeout: 10
+                    });
+                    if (fileResp.statusCode === 200) {
+                      var fileData = JSON.parse(fileResp.raw);
+                      fileSha = fileData.sha;
+                    }
+                  } catch (err) {}
+
+                  // Create or update file
+                  var commitUrl = "https://api.github.com/repos/" + ghRepoPath + "/contents/" + filePath;
+                  var commitBody = {
+                    message: "[Auto-Sync] " + (fileSha ? "Update" : "Add") + " rule: " + (rule.name || ruleId),
+                    content: base64Content,
+                    branch: gitBranch
+                  };
+                  if (fileSha) commitBody.sha = fileSha;
+
+                  try {
+                    var commitResp = $http.send({
+                      url: commitUrl,
+                      method: "PUT",
+                      headers: {
+                        "Authorization": "Bearer " + gitToken,
+                        "Accept": "application/vnd.github.v3+json",
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify(commitBody),
+                      timeout: 15
+                    });
+
+                    if (commitResp.statusCode === 200 || commitResp.statusCode === 201) {
+                      summary.exported++;
+                    }
+                  } catch (err) {
+                    console.log("[Auto-Sync] Error committing rule: " + String(err));
+                  }
+                }
+              }
+            }
+
+            // Update job status
+            job.set("status", "completed");
+            job.set("completed_at", new Date().toISOString());
+            job.set("changes_summary", JSON.stringify(summary));
+            $app.save(job);
+
+            // Update project's last sync timestamp
+            project.set(lastSyncField, new Date().toISOString());
+            $app.save(project);
+
+            console.log("[Auto-Sync] Completed sync for " + project.get("name") + " " + envName + ": " + summary.exported + " rules exported");
+
+          } catch (err) {
+            console.log("[Auto-Sync] Error running sync: " + String(err));
+            // Update job to failed status if it exists
+            try {
+              if (job && job.id) {
+                job.set("status", "failed");
+                job.set("error_message", String(err));
+                job.set("completed_at", new Date().toISOString());
+                $app.save(job);
+              }
+            } catch (saveErr) {}
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.log("[Auto-Sync] Error in scheduler: " + String(err));
+  }
+});
+
+console.log("Elastic Git Sync hooks loaded (with auto-sync scheduler)");

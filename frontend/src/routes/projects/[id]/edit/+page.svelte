@@ -9,7 +9,8 @@
 		Loader,
 		TestTube,
 		Rocket,
-		Trash2
+		Trash2,
+		Clock
 	} from 'lucide-svelte';
 	import type { ProjectExpanded, Environment, ElasticInstance, GitRepository } from '$types';
 
@@ -31,6 +32,8 @@
 	let gitRepositoryId = $state('');
 	let gitPath = $state('');
 	let isActive = $state(true);
+	let syncEnabled = $state(false);
+	let autoSyncInterval = $state(0);
 
 	// Test environment form
 	let testSpace = $state('');
@@ -62,6 +65,8 @@
 			gitRepositoryId = project.git_repository;
 			gitPath = project.git_path || '';
 			isActive = project.is_active;
+			syncEnabled = project.sync_enabled || false;
+			autoSyncInterval = project.auto_sync_interval || 0;
 
 			// Load environments
 			environments = await pb.collection('environments').getFullList({
@@ -132,7 +137,9 @@
 				elastic_space: testSpace, // Keep for backwards compatibility
 				git_repository: gitRepositoryId,
 				git_path: gitPath || '',
-				is_active: isActive
+				is_active: isActive,
+				sync_enabled: syncEnabled,
+				auto_sync_interval: syncEnabled ? autoSyncInterval : 0
 			});
 
 			// Update or create test environment
@@ -317,6 +324,61 @@
 						Project is active
 					</label>
 				</div>
+			</div>
+		</div>
+
+		<!-- Auto-Sync Settings -->
+		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+			<div class="flex items-center gap-3 mb-4">
+				<div class="p-2 bg-blue-100 rounded-lg">
+					<Clock class="w-5 h-5 text-blue-600" />
+				</div>
+				<div>
+					<h2 class="text-lg font-semibold text-gray-900">Automatic Sync</h2>
+					<p class="text-sm text-gray-500">Schedule automatic rule exports to Git</p>
+				</div>
+			</div>
+			<div class="space-y-4">
+				<div class="flex items-center gap-2">
+					<input
+						id="sync-enabled"
+						type="checkbox"
+						bind:checked={syncEnabled}
+						class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-600"
+					/>
+					<label for="sync-enabled" class="text-sm font-medium text-gray-700">
+						Enable automatic sync
+					</label>
+				</div>
+
+				{#if syncEnabled}
+					<div>
+						<label for="sync-interval" class="block text-sm font-medium text-gray-700 mb-2">
+							Sync Interval
+						</label>
+						<select
+							id="sync-interval"
+							bind:value={autoSyncInterval}
+							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+						>
+							<option value={5}>Every 5 minutes</option>
+							<option value={15}>Every 15 minutes</option>
+							<option value={30}>Every 30 minutes</option>
+							<option value={60}>Every hour</option>
+							<option value={120}>Every 2 hours</option>
+							<option value={360}>Every 6 hours</option>
+							<option value={720}>Every 12 hours</option>
+							<option value={1440}>Every 24 hours</option>
+						</select>
+					</div>
+
+					<div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+						<p class="text-sm text-blue-800">
+							When enabled, rules from your Test environment will be automatically exported to Git at the selected interval.
+							This only exports from Elastic to Git - it does not import rules to Production.
+						</p>
+					</div>
+				{/if}
 			</div>
 		</div>
 
