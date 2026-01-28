@@ -18,6 +18,9 @@ A powerful self-hosted tool for synchronizing Elastic Security detection rules w
 - **Beautiful Dashboard**: Clean, modern UI built with Tailwind CSS
 - **Self-Hosted**: Complete control over your data and infrastructure
 
+## Screenshot
+![alt text](image.png)
+
 ## Architecture
 
 ```
