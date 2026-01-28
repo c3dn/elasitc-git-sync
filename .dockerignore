@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+npm-debug.log
+
+# Build artifacts
+.svelte-kit
+build
+dist
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PocketBase
+backend/pb_data
+
+# Logs
+*.log
+
+# Documentation
+README.md
+CONTRIBUTING.md
+LICENSE

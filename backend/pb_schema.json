@@ -1,0 +1,174 @@
+[
+  {
+    "name": "elastic_instances",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "name", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "url", "type": "url", "required": true},
+      {"name": "api_key", "type": "text", "required": true, "options": {"min": 1}},
+      {"name": "spaces", "type": "json", "required": false},
+      {"name": "is_active", "type": "bool", "required": true},
+      {"name": "last_connection_test", "type": "date", "required": false},
+      {"name": "connection_status", "type": "select", "required": false, "options": {"maxSelect": 1, "values": ["unknown", "success", "failed"]}}
+    ],
+    "indexes": ["CREATE UNIQUE INDEX idx_elastic_name ON elastic_instances (name)"],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "git_repositories",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "name", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "url", "type": "url", "required": true},
+      {"name": "provider", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["gitlab", "github", "generic"]}},
+      {"name": "access_token", "type": "text", "required": true, "options": {"min": 1}},
+      {"name": "default_branch", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "base_path", "type": "text", "required": false, "options": {"max": 500}},
+      {"name": "is_active", "type": "bool", "required": true},
+      {"name": "last_connection_test", "type": "date", "required": false},
+      {"name": "connection_status", "type": "select", "required": false, "options": {"maxSelect": 1, "values": ["unknown", "success", "failed"]}}
+    ],
+    "indexes": ["CREATE UNIQUE INDEX idx_git_name ON git_repositories (name)"],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "projects",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "name", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "description", "type": "text", "required": false, "options": {"max": 1000}},
+      {"name": "elastic_instance", "type": "relation", "required": true, "options": {"collectionId": "elastic_instances", "cascadeDelete": false, "maxSelect": 1}},
+      {"name": "git_repository", "type": "relation", "required": true, "options": {"collectionId": "git_repositories", "cascadeDelete": false, "maxSelect": 1}},
+      {"name": "git_path", "type": "text", "required": false, "options": {"max": 500}},
+      {"name": "is_active", "type": "bool", "required": true},
+      {"name": "sync_enabled", "type": "bool", "required": true},
+      {"name": "auto_sync_interval", "type": "number", "required": false, "options": {"min": 0}},
+      {"name": "test_rules_count", "type": "number", "required": false, "options": {"min": 0}},
+      {"name": "prod_rules_count", "type": "number", "required": false, "options": {"min": 0}},
+      {"name": "last_sync_test", "type": "date", "required": false},
+      {"name": "last_sync_prod", "type": "date", "required": false}
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "environments",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "project", "type": "relation", "required": true, "options": {"collectionId": "projects", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "name", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["test", "staging", "production"]}},
+      {"name": "elastic_space", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "git_branch", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "requires_approval", "type": "bool", "required": true},
+      {"name": "auto_deploy", "type": "bool", "required": true}
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "sync_jobs",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "project", "type": "relation", "required": true, "options": {"collectionId": "projects", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "environment", "type": "relation", "required": false, "options": {"collectionId": "environments", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "type", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["manual", "scheduled", "webhook"]}},
+      {"name": "direction", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["elastic_to_git", "git_to_elastic", "bidirectional"]}},
+      {"name": "status", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["pending", "running", "completed", "failed", "conflict"]}},
+      {"name": "started_at", "type": "date", "required": false},
+      {"name": "completed_at", "type": "date", "required": false},
+      {"name": "triggered_by", "type": "text", "required": false, "options": {"max": 255}},
+      {"name": "changes_summary", "type": "json", "required": false},
+      {"name": "error_message", "type": "text", "required": false, "options": {"max": 5000}},
+      {"name": "git_commit_sha", "type": "text", "required": false, "options": {"max": 255}},
+      {"name": "merge_request_url", "type": "url", "required": false}
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "rules_cache",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "project", "type": "relation", "required": true, "options": {"collectionId": "projects", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "rule_id", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "rule_name", "type": "text", "required": true, "options": {"min": 1, "max": 500}},
+      {"name": "rule_type", "type": "text", "required": false, "options": {"max": 100}},
+      {"name": "enabled", "type": "bool", "required": true},
+      {"name": "elastic_hash", "type": "text", "required": false, "options": {"max": 64}},
+      {"name": "git_hash", "type": "text", "required": false, "options": {"max": 64}},
+      {"name": "last_sync", "type": "date", "required": false},
+      {"name": "sync_status", "type": "select", "required": false, "options": {"maxSelect": 1, "values": ["synced", "modified_elastic", "modified_git", "conflict", "new_elastic", "new_git"]}},
+      {"name": "file_path", "type": "text", "required": false, "options": {"max": 1000}}
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "conflicts",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "sync_job", "type": "relation", "required": true, "options": {"collectionId": "sync_jobs", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "rule_id", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "rule_name", "type": "text", "required": true, "options": {"min": 1, "max": 500}},
+      {"name": "elastic_version", "type": "json", "required": true},
+      {"name": "git_version", "type": "json", "required": true},
+      {"name": "resolution", "type": "select", "required": false, "options": {"maxSelect": 1, "values": ["pending", "use_elastic", "use_git", "manual_merge"]}},
+      {"name": "resolved_at", "type": "date", "required": false},
+      {"name": "resolved_by", "type": "text", "required": false, "options": {"max": 255}}
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "merge_requests",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "project", "type": "relation", "required": true, "options": {"collectionId": "projects", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "source_env", "type": "relation", "required": true, "options": {"collectionId": "environments", "cascadeDelete": false, "maxSelect": 1}},
+      {"name": "target_env", "type": "relation", "required": true, "options": {"collectionId": "environments", "cascadeDelete": false, "maxSelect": 1}},
+      {"name": "title", "type": "text", "required": true, "options": {"min": 1, "max": 500}},
+      {"name": "description", "type": "text", "required": false, "options": {"max": 5000}},
+      {"name": "status", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["open", "merged", "closed"]}},
+      {"name": "external_id", "type": "text", "required": false, "options": {"max": 100}},
+      {"name": "external_url", "type": "url", "required": false},
+      {"name": "rules_changed", "type": "json", "required": false},
+      {"name": "merged_at", "type": "date", "required": false}
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  }
+]

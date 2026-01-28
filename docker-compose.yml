@@ -1,0 +1,32 @@
+services:
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    container_name: elastic-git-sync-backend
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./backend/pb_data:/pb/pb_data
+      - ./backend/pb_migrations:/pb/pb_migrations
+      - ./backend/pb_hooks:/pb/pb_hooks
+    command: serve --http=0.0.0.0:8090 --dir=/pb/pb_data --hooksDir=/pb/pb_hooks --migrationsDir=/pb/pb_migrations --dev
+    environment:
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-secret-encryption-key}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: elastic-git-sync-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PUBLIC_POCKETBASE_URL=http://pocketbase:8090
+      - ORIGIN=http://localhost:3000
+    depends_on:
+      - pocketbase
+
+networks:
+  default:
+    name: elastic-git-sync-network
