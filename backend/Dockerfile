@@ -13,13 +13,15 @@ FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates
 
-COPY --from=builder /build/pocketbase /usr/local/bin/pocketbase
+COPY --from=builder /build/pocketbase /pb/pocketbase
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Bake hooks and migrations into the image
-COPY pb_hooks /pb_hooks
-COPY pb_migrations /pb_migrations
+# Bake hooks and migrations next to the binary
+COPY pb_hooks /pb/pb_hooks
+COPY pb_migrations /pb/pb_migrations
+
+WORKDIR /pb
 
 EXPOSE 8090
 

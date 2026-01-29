@@ -11,4 +11,4 @@ if [ -d /custom-ca ]; then
   update-ca-certificates
 fi
 
-exec pocketbase "$@"
+exec /pb/pocketbase "$@"

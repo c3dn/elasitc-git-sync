@@ -7,6 +7,8 @@ import (
 	"os"
 
 	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/plugins/jsvm"
+	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 )
 
 func main() {
@@ -18,6 +20,17 @@ func main() {
 	}
 
 	app := pocketbase.New()
+
+	// Register the JSVM plugin to load pb_hooks/*.pb.js and pb_migrations/*.js
+	jsvm.MustRegister(app, jsvm.Config{
+		HooksWatch: true,
+	})
+
+	// Register the migrate command with JS template support
+	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
+		TemplateLang: migratecmd.TemplateLangJS,
+		Automigrate:  true,
+	})
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
