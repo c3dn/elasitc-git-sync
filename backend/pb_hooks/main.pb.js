@@ -5,6 +5,14 @@
  * Compatible with PocketBase v0.23+
  */
 
+// SSL Status API
+routerAdd("GET", "/api/settings/ssl-status", function(e) {
+  var disableSslVerify = $os.getenv("DISABLE_SSL_VERIFY") === "true";
+  return e.json(200, {
+    ssl_verification_disabled: disableSslVerify
+  });
+});
+
 // Dashboard Stats API
 routerAdd("GET", "/api/dashboard/stats", function(e) {
   var totalProjects = 0;

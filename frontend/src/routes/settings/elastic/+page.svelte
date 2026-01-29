@@ -10,6 +10,7 @@
 	let testingConnection = false;
 	let error = '';
 	let editingId: string | null = null;
+	let sslVerificationDisabled = false;
 
 	// Form fields
 	let name = '';
@@ -19,6 +20,11 @@
 
 	onMount(async () => {
 		await loadInstances();
+		try {
+			const res = await fetch(`${pb.baseUrl}/api/settings/ssl-status`);
+			const data = await res.json();
+			sslVerificationDisabled = data.ssl_verification_disabled;
+		} catch (err) {}
 	});
 
 	async function loadInstances() {
@@ -160,6 +166,15 @@
 </svelte:head>
 
 <div class="space-y-6">
+	{#if sslVerificationDisabled}
+		<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+			<p class="text-sm text-yellow-800 font-medium">SSL certificate verification is disabled</p>
+			<p class="text-xs text-yellow-700 mt-1">
+				The DISABLE_SSL_VERIFY environment variable is set to true. All outgoing HTTPS connections skip certificate verification.
+			</p>
+		</div>
+	{/if}
+
 	{#if !showForm}
 		<button
 			on:click={openCreateForm}
