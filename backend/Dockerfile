@@ -19,6 +19,8 @@ COPY --from=builder /build/pocketbase /usr/local/bin/pocketbase
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+WORKDIR /pb
+
 EXPOSE 8090
 
 ENTRYPOINT ["/entrypoint.sh"]
