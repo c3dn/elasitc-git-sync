@@ -1350,18 +1350,31 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
       for (var e = 0; e < environments.length; e++) {
         var env = environments[e];
         var envName = env.get("name");
-        var lastSyncField = envName === "production" ? "last_sync_prod" : "last_sync_test";
-        var lastSyncStr = project.get(lastSyncField);
 
+        // Check last completed sync job for this project+environment
         var needsSync = false;
+        try {
+          var lastJobs = $app.findRecordsByFilter(
+            "sync_jobs",
+            "project = '" + project.id + "' && environment = '" + env.id + "' && type = 'scheduled' && (status = 'completed' || status = 'running')",
+            "-created",
+            1,
+            0
+          );
 
-        if (!lastSyncStr) {
-          // Never synced before
-          needsSync = true;
-        } else {
-          var lastSync = new Date(lastSyncStr);
-          var diffMinutes = (now.getTime() - lastSync.getTime()) / (1000 * 60);
-          needsSync = diffMinutes >= intervalMinutes;
+          if (lastJobs.length === 0) {
+            // Never synced before
+            needsSync = true;
+          } else {
+            var lastJobTime = lastJobs[0].get("created");
+            var lastSync = new Date(lastJobTime);
+            var diffMinutes = (now.getTime() - lastSync.getTime()) / (1000 * 60);
+            needsSync = diffMinutes >= intervalMinutes;
+          }
+        } catch (err) {
+          // If query fails, skip this environment to avoid spamming
+          console.log("[Auto-Sync] Error checking last sync for env " + envName + ": " + String(err));
+          needsSync = false;
         }
 
         if (needsSync) {
@@ -1558,10 +1571,6 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
             job.set("completed_at", new Date().toISOString());
             job.set("changes_summary", JSON.stringify(summary));
             $app.save(job);
-
-            // Update project's last sync timestamp
-            project.set(lastSyncField, new Date().toISOString());
-            $app.save(project);
 
             console.log("[Auto-Sync] Completed sync for " + project.get("name") + " " + envName + ": " + summary.exported + " rules exported");
 
