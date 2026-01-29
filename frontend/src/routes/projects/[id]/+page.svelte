@@ -25,6 +25,7 @@
 		ChevronRight
 	} from 'lucide-svelte';
 	import type { ProjectExpanded, SyncJob } from '$types';
+	import RuleSelectionModal from '$lib/components/RuleSelectionModal.svelte';
 
 	interface Environment {
 		id: string;
@@ -47,6 +48,7 @@
 	let syncingTest = $state(false);
 	let syncingProd = $state(false);
 	let creatingMR = $state(false);
+	let showRuleSelection = $state(false);
 
 	// Metrics
 	let testRuleCount = $state(0);
@@ -120,7 +122,12 @@
 		}
 	}
 
-	async function syncTestToGit() {
+	function openRuleSelection() {
+		showRuleSelection = true;
+	}
+
+	async function handleExport(ruleIds: string[] | null) {
+		showRuleSelection = false;
 		if (!testEnv) return;
 
 		try {
@@ -128,16 +135,22 @@
 			error = '';
 			successMessage = '';
 
+			const body: Record<string, any> = {
+				project_id: projectId,
+				environment_id: testEnv.id,
+				direction: 'elastic_to_git',
+				branch: testEnv.git_branch,
+				space: testEnv.elastic_space
+			};
+
+			if (ruleIds !== null) {
+				body.rule_ids = ruleIds;
+			}
+
 			const response = await fetch(`${pb.baseUrl}/api/sync/trigger`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					project_id: projectId,
-					environment_id: testEnv.id,
-					direction: 'elastic_to_git',
-					branch: testEnv.git_branch,
-					space: testEnv.elastic_space
-				})
+				body: JSON.stringify(body)
 			});
 
 			const result = await response.json();
@@ -365,7 +378,7 @@
 							</div>
 
 							<button
-								on:click={syncTestToGit}
+								on:click={openRuleSelection}
 								disabled={syncingTest}
 								class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
 							>
@@ -642,3 +655,14 @@
 		</div>
 	{/if}
 </div>
+
+{#if testEnv}
+	<RuleSelectionModal
+		open={showRuleSelection}
+		projectId={projectId}
+		space={testEnv.elastic_space}
+		branch={testEnv.git_branch}
+		onexport={handleExport}
+		onclose={() => showRuleSelection = false}
+	/>
+{/if}

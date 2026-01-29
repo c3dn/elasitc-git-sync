@@ -148,6 +148,7 @@ export interface SyncRequest {
   project_id: string;
   environment_id?: string;
   direction: 'elastic_to_git' | 'git_to_elastic' | 'bidirectional';
+  rule_ids?: string[]; // optional: selective export (null/undefined = export all)
   create_merge_request?: boolean;
   merge_request_title?: string;
   merge_request_description?: string;
@@ -202,6 +203,17 @@ export interface MergeRequestResponse {
 // ============================================================================
 // Elastic Security Rule Types
 // ============================================================================
+
+export interface ElasticRuleSummary {
+  rule_id: string;
+  id: string;
+  name: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical' | 'unknown';
+  type: string;
+  tags: string[];
+  enabled: boolean;
+}
 
 export interface ElasticSecurityRule {
   id: string;

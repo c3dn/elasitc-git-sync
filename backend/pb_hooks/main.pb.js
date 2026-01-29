@@ -226,6 +226,75 @@ routerAdd("POST", "/api/connection/test", function(e) {
   }
 });
 
+// Rules List API - fetch available rules from Elastic for selection
+routerAdd("POST", "/api/rules/list", function(e) {
+  var data = e.requestInfo().body;
+  var projectId = data.project_id;
+  var spaceOverride = data.space;
+
+  try {
+    var project = e.app.findRecordById("projects", projectId);
+    var elasticId = project.get("elastic_instance");
+    var elastic = e.app.findRecordById("elastic_instances", elasticId);
+    var elasticUrl = elastic.get("url").replace(/\/$/, "");
+    var apiKey = elastic.get("api_key");
+    var elasticSpace = spaceOverride || project.get("elastic_space");
+
+    var rulesApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find?per_page=100";
+
+    var resp = $http.send({
+      url: rulesApiUrl,
+      method: "GET",
+      headers: {
+        "Authorization": "ApiKey " + apiKey,
+        "kbn-xsrf": "true",
+        "Content-Type": "application/json"
+      },
+      timeout: 30
+    });
+
+    if (resp.statusCode === 200) {
+      var responseData = JSON.parse(resp.raw);
+      var allRules = responseData.data || [];
+      var rulesSummary = [];
+
+      for (var i = 0; i < allRules.length; i++) {
+        var rule = allRules[i];
+        rulesSummary.push({
+          rule_id: rule.rule_id || rule.id,
+          id: rule.id,
+          name: rule.name || "",
+          description: rule.description || "",
+          severity: rule.severity || "unknown",
+          type: rule.type || "unknown",
+          tags: rule.tags || [],
+          enabled: !!rule.enabled
+        });
+      }
+
+      return e.json(200, {
+        success: true,
+        rules: rulesSummary,
+        total: responseData.total || allRules.length
+      });
+    } else {
+      return e.json(200, {
+        success: false,
+        message: "Elastic API returned status " + resp.statusCode,
+        rules: [],
+        total: 0
+      });
+    }
+  } catch (err) {
+    return e.json(500, {
+      success: false,
+      message: "Failed to fetch rules: " + String(err),
+      rules: [],
+      total: 0
+    });
+  }
+});
+
 // Sync Trigger API - runs sync immediately
 routerAdd("POST", "/api/sync/trigger", function(e) {
   var data = e.requestInfo().body;
@@ -235,6 +304,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
   var branchOverride = data.branch;
   var spaceOverride = data.space;
   var environmentId = data.environment_id;
+  var selectedRuleIds = data.rule_ids; // optional array of rule_id strings for selective export
 
   try {
     // Create sync job record
@@ -304,6 +374,22 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
         }
       } catch (err) {
         console.log("Error fetching Elastic rules: " + String(err));
+      }
+
+      // Filter rules if specific rule_ids were provided (selective export)
+      if (selectedRuleIds && selectedRuleIds.length > 0) {
+        var filteredRules = [];
+        for (var fi = 0; fi < elasticRules.length; fi++) {
+          var ruleIdentifier = elasticRules[fi].rule_id || elasticRules[fi].id;
+          for (var si = 0; si < selectedRuleIds.length; si++) {
+            if (selectedRuleIds[si] === ruleIdentifier) {
+              filteredRules.push(elasticRules[fi]);
+              break;
+            }
+          }
+        }
+        elasticRules = filteredRules;
+        console.log("Filtered to " + elasticRules.length + " selected rules");
       }
 
       // Export to Git
@@ -427,37 +513,39 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
             }
           }
 
-          // Delete files that no longer exist in Elastic
-          summary.deleted = 0;
-          for (var d = 0; d < existingFiles.length; d++) {
-            var existingFile = existingFiles[d];
-            // Extract rule_id from filename (remove .json)
-            var fileRuleId = existingFile.name.replace(".json", "");
+          // Delete files that no longer exist in Elastic (only on full export, not selective)
+          if (!selectedRuleIds || selectedRuleIds.length === 0) {
+            summary.deleted = 0;
+            for (var d = 0; d < existingFiles.length; d++) {
+              var existingFile = existingFiles[d];
+              // Extract rule_id from filename (remove .json)
+              var fileRuleId = existingFile.name.replace(".json", "");
 
-            if (!elasticRuleIds[fileRuleId]) {
-              // Rule no longer exists in Elastic, delete from Git
-              var deleteUrl = glApiBase + "/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(existingFile.path);
-              try {
-                console.log("Deleting removed rule: " + existingFile.name);
-                var delResp = $http.send({
-                  url: deleteUrl,
-                  method: "DELETE",
-                  headers: {
-                    "Authorization": "Bearer " + gitToken,
-                    "Content-Type": "application/json"
-                  },
-                  body: JSON.stringify({
-                    branch: gitBranch,
-                    commit_message: "Delete rule: " + fileRuleId
-                  }),
-                  timeout: 15
-                });
-                if (delResp.statusCode === 204 || delResp.statusCode === 200) {
-                  summary.deleted++;
-                  console.log("Deleted: " + existingFile.name);
+              if (!elasticRuleIds[fileRuleId]) {
+                // Rule no longer exists in Elastic, delete from Git
+                var deleteUrl = glApiBase + "/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(existingFile.path);
+                try {
+                  console.log("Deleting removed rule: " + existingFile.name);
+                  var delResp = $http.send({
+                    url: deleteUrl,
+                    method: "DELETE",
+                    headers: {
+                      "Authorization": "Bearer " + gitToken,
+                      "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                      branch: gitBranch,
+                      commit_message: "Delete rule: " + fileRuleId
+                    }),
+                    timeout: 15
+                  });
+                  if (delResp.statusCode === 204 || delResp.statusCode === 200) {
+                    summary.deleted++;
+                    console.log("Deleted: " + existingFile.name);
+                  }
+                } catch (err) {
+                  console.log("Delete error: " + String(err));
                 }
-              } catch (err) {
-                console.log("Delete error: " + String(err));
               }
             }
           }
