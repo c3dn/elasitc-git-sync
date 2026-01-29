@@ -2,11 +2,12 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /build
 
+# Copy module files first for better caching
+COPY go.mod .
 COPY main.go .
 
-RUN go mod init elastic-git-sync && \
-    go get github.com/pocketbase/pocketbase@latest && \
-    go mod tidy && \
+# Download dependencies, generate go.sum, and build
+RUN go mod tidy && \
     CGO_ENABLED=0 go build -o pocketbase .
 
 # Runtime stage
