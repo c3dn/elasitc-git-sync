@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { Server, FolderGit2 } from 'lucide-svelte';
+	import { Server, FolderGit2, UserCog } from 'lucide-svelte';
 
 	const tabs = [
 		{ name: 'Elastic Instances', href: '/settings/elastic', icon: Server },
-		{ name: 'Git Repositories', href: '/settings/git', icon: FolderGit2 }
+		{ name: 'Git Repositories', href: '/settings/git', icon: FolderGit2 },
+		{ name: 'Account', href: '/settings/account', icon: UserCog }
 	];
 </script>
 
@@ -13,7 +14,7 @@
 	<div>
 		<h1 class="text-3xl font-bold text-gray-900">Settings</h1>
 		<p class="mt-1 text-sm text-gray-500">
-			Configure Elastic instances and Git repositories
+			Configure Elastic instances, Git repositories, and your account
 		</p>
 	</div>
 

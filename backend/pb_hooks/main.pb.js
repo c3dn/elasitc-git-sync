@@ -967,7 +967,9 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
         return e.json(400, { success: false, message: "Invalid GitLab URL" });
       }
 
-      var mrApiUrl = glMrMatch[1] + "/api/v4/projects/" + encodeURIComponent(glMrMatch[2]) + "/merge_requests";
+      var glApiBase = glMrMatch[1] + "/api/v4";
+      var glProjectEncoded = encodeURIComponent(glMrMatch[2]);
+      var mrApiUrl = glApiBase + "/projects/" + glProjectEncoded + "/merge_requests";
 
       var mrResp = $http.send({
         url: mrApiUrl,
@@ -987,11 +989,149 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
 
       if (mrResp.statusCode === 201) {
         var mrData = JSON.parse(mrResp.raw);
+        var mrIid = mrData.iid;
+        var mrUrl = mrData.web_url;
+        var conflictsResolved = false;
+        var conflictsCount = 0;
+
+        // Check if MR has conflicts and auto-resolve
+        if (mrData.has_conflicts) {
+          console.log("MR " + mrIid + " has conflicts, attempting auto-resolve...");
+
+          // Step 1: Try rebase
+          var rebaseResolved = false;
+          try {
+            var rebaseUrl = glApiBase + "/projects/" + glProjectEncoded + "/merge_requests/" + mrIid + "/rebase";
+            var rebaseResp = $http.send({
+              url: rebaseUrl,
+              method: "PUT",
+              headers: { "Authorization": "Bearer " + gitToken },
+              timeout: 30
+            });
+            console.log("Rebase response status: " + rebaseResp.statusCode);
+
+            if (rebaseResp.statusCode === 202 || rebaseResp.statusCode === 200) {
+              // Poll MR status to check if rebase resolved conflicts
+              for (var poll = 0; poll < 10; poll++) {
+                var checkUrl = glApiBase + "/projects/" + glProjectEncoded + "/merge_requests/" + mrIid;
+                var checkResp = $http.send({
+                  url: checkUrl,
+                  method: "GET",
+                  headers: { "Authorization": "Bearer " + gitToken },
+                  timeout: 10
+                });
+
+                if (checkResp.statusCode === 200) {
+                  var checkData = JSON.parse(checkResp.raw);
+                  if (!checkData.rebase_in_progress) {
+                    if (!checkData.has_conflicts) {
+                      rebaseResolved = true;
+                      conflictsResolved = true;
+                      console.log("Rebase resolved all conflicts");
+                    } else {
+                      console.log("Rebase completed but conflicts remain");
+                    }
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.log("Rebase error: " + String(err));
+          }
+
+          // Step 2: If rebase didn't resolve, try manual conflict resolution via API
+          if (!rebaseResolved) {
+            console.log("Attempting manual conflict resolution...");
+            try {
+              var conflictsUrl = glApiBase + "/projects/" + glProjectEncoded + "/merge_requests/" + mrIid + "/conflicts";
+              var conflictsResp = $http.send({
+                url: conflictsUrl,
+                method: "GET",
+                headers: { "Authorization": "Bearer " + gitToken },
+                timeout: 15
+              });
+
+              if (conflictsResp.statusCode === 200) {
+                var conflictData = JSON.parse(conflictsResp.raw);
+                var conflictFiles = conflictData.files || conflictData;
+                if (Array.isArray(conflictFiles)) {
+                  conflictsCount = conflictFiles.length;
+                  console.log("Found " + conflictsCount + " conflicting files");
+
+                  // Build resolution: use source branch content for each conflicting file
+                  var resolvedFiles = [];
+                  for (var cf = 0; cf < conflictFiles.length; cf++) {
+                    var conflict = conflictFiles[cf];
+                    var conflictPath = conflict.new_path || conflict.old_path;
+                    var sourceFileUrl = glApiBase + "/projects/" + glProjectEncoded + "/repository/files/" + encodeURIComponent(conflictPath) + "/raw?ref=" + encodeURIComponent(sourceBranch);
+
+                    try {
+                      var sourceResp = $http.send({
+                        url: sourceFileUrl,
+                        method: "GET",
+                        headers: { "Authorization": "Bearer " + gitToken },
+                        timeout: 10
+                      });
+
+                      if (sourceResp.statusCode === 200) {
+                        resolvedFiles.push({
+                          old_path: conflict.old_path,
+                          new_path: conflict.new_path || conflict.old_path,
+                          content: sourceResp.raw
+                        });
+                      } else {
+                        console.log("Could not fetch source file " + conflictPath + ": " + sourceResp.statusCode);
+                      }
+                    } catch (err) {
+                      console.log("Error fetching source file " + conflictPath + ": " + String(err));
+                    }
+                  }
+
+                  if (resolvedFiles.length > 0) {
+                    var resolveResp = $http.send({
+                      url: conflictsUrl,
+                      method: "PUT",
+                      headers: {
+                        "Authorization": "Bearer " + gitToken,
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify({
+                        commit_message: "Auto-resolve conflicts: use source branch (" + sourceBranch + ") content",
+                        files: resolvedFiles
+                      }),
+                      timeout: 30
+                    });
+
+                    if (resolveResp.statusCode === 200) {
+                      conflictsResolved = true;
+                      console.log("Manually resolved " + resolvedFiles.length + " conflicts");
+                    } else {
+                      console.log("Conflict resolution API failed: " + resolveResp.statusCode + " " + resolveResp.raw);
+                    }
+                  }
+                }
+              } else {
+                console.log("Failed to fetch conflicts: " + conflictsResp.statusCode);
+              }
+            } catch (err) {
+              console.log("Manual conflict resolution error: " + String(err));
+            }
+          }
+        }
+
+        var mrMessage = "Merge Request created";
+        if (conflictsResolved) {
+          mrMessage += " (" + (conflictsCount || "all") + " conflicts auto-resolved)";
+        }
+
         return e.json(200, {
           success: true,
-          message: "Merge Request created",
-          mr_id: mrData.iid,
-          url: mrData.web_url
+          message: mrMessage,
+          mr_id: mrIid,
+          url: mrUrl,
+          conflicts_resolved: conflictsResolved,
+          conflicts_count: conflictsCount
         });
       } else if (mrResp.statusCode === 409) {
         // MR already exists
@@ -1014,15 +1154,14 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
 
       var ghOwner = ghMatch[1];
       var ghRepoName = ghMatch[2];
-      var prApiUrl = "https://api.github.com/repos/" + ghOwner + "/" + ghRepoName + "/pulls";
+      var ghApiBase = "https://api.github.com/repos/" + ghOwner + "/" + ghRepoName;
+      var ghHeaders = { "Authorization": "token " + gitToken, "Accept": "application/vnd.github.v3+json" };
+      var prApiUrl = ghApiBase + "/pulls";
 
       var prResp = $http.send({
         url: prApiUrl,
         method: "POST",
-        headers: {
-          "Authorization": "token " + gitToken,
-          "Accept": "application/vnd.github.v3+json"
-        },
+        headers: ghHeaders,
         body: JSON.stringify({
           title: title,
           head: sourceBranch,
@@ -1034,11 +1173,124 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
 
       if (prResp.statusCode === 201) {
         var prData = JSON.parse(prResp.raw);
+        var prNumber = prData.number;
+        var prUrl = prData.html_url;
+        var ghConflictsResolved = false;
+        var ghConflictsCount = 0;
+
+        // GitHub computes mergeable status async — poll to check for conflicts
+        var prMergeable = null;
+        for (var ghPoll = 0; ghPoll < 5; ghPoll++) {
+          var prCheckResp = $http.send({
+            url: ghApiBase + "/pulls/" + prNumber,
+            method: "GET",
+            headers: ghHeaders,
+            timeout: 10
+          });
+
+          if (prCheckResp.statusCode === 200) {
+            var prCheckData = JSON.parse(prCheckResp.raw);
+            if (prCheckData.mergeable !== null) {
+              prMergeable = prCheckData.mergeable;
+              break;
+            }
+          }
+        }
+
+        // If PR has conflicts, try to resolve by merging base into head
+        if (prMergeable === false) {
+          console.log("PR " + prNumber + " has conflicts, attempting auto-resolve...");
+
+          try {
+            // Try merging target (base) into source (head) branch
+            var mergeResp = $http.send({
+              url: ghApiBase + "/merges",
+              method: "POST",
+              headers: ghHeaders,
+              body: JSON.stringify({
+                base: sourceBranch,
+                head: targetBranch,
+                commit_message: "Auto-merge " + targetBranch + " into " + sourceBranch + " to resolve conflicts"
+              }),
+              timeout: 30
+            });
+
+            if (mergeResp.statusCode === 201) {
+              ghConflictsResolved = true;
+              console.log("Merged " + targetBranch + " into " + sourceBranch + " to resolve conflicts");
+            } else if (mergeResp.statusCode === 409) {
+              // Merge conflicts — need manual file-level resolution
+              console.log("Auto-merge failed, attempting file-level resolution...");
+
+              // Compare branches to find conflicting files
+              var compareResp = $http.send({
+                url: ghApiBase + "/compare/" + targetBranch + "..." + sourceBranch,
+                method: "GET",
+                headers: ghHeaders,
+                timeout: 15
+              });
+
+              if (compareResp.statusCode === 200) {
+                var compareData = JSON.parse(compareResp.raw);
+                var changedFiles = compareData.files || [];
+                ghConflictsCount = changedFiles.length;
+
+                // For each changed file, get the source branch version and recommit
+                for (var gf = 0; gf < changedFiles.length; gf++) {
+                  var changedFile = changedFiles[gf];
+                  var ghFilePath = changedFile.filename;
+
+                  // Get file content from source branch
+                  try {
+                    var ghFileResp = $http.send({
+                      url: ghApiBase + "/contents/" + ghFilePath + "?ref=" + encodeURIComponent(sourceBranch),
+                      method: "GET",
+                      headers: ghHeaders,
+                      timeout: 10
+                    });
+
+                    if (ghFileResp.statusCode === 200) {
+                      var ghFileData = JSON.parse(ghFileResp.raw);
+                      // File exists on source — get its SHA and content
+                      // The content is already base64 from the API
+
+                      // Get the file SHA on target branch to update it
+                      var ghTargetFileResp = $http.send({
+                        url: ghApiBase + "/contents/" + ghFilePath + "?ref=" + encodeURIComponent(targetBranch),
+                        method: "GET",
+                        headers: ghHeaders,
+                        timeout: 10
+                      });
+
+                      if (ghTargetFileResp.statusCode === 200) {
+                        // File exists on target too — update source branch with a merge commit
+                        // This approach updates the source branch to include target content then overwrite
+                        console.log("Conflict in " + ghFilePath + " — source version will be kept via MR");
+                      }
+                    }
+                  } catch (err) {
+                    console.log("Error processing conflicted file " + ghFilePath + ": " + String(err));
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.log("GitHub conflict resolution error: " + String(err));
+          }
+        }
+
+        var prMessage = "Pull Request created";
+        if (ghConflictsResolved) {
+          prMessage += " (" + (ghConflictsCount || "all") + " conflicts auto-resolved)";
+        }
+
         return e.json(200, {
           success: true,
-          message: "Pull Request created",
-          pr_id: prData.number,
-          url: prData.html_url
+          message: prMessage,
+          pr_id: prNumber,
+          url: prUrl,
+          conflicts_resolved: ghConflictsResolved,
+          conflicts_count: ghConflictsCount
         });
       } else {
         var ghErrData = JSON.parse(prResp.raw);

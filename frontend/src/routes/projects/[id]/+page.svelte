@@ -191,7 +191,12 @@
 			const result = await response.json();
 
 			if (result.success && result.url) {
-				successMessage = 'Merge Request created! Opening in new tab...';
+				let msg = 'Merge Request created!';
+				if (result.conflicts_resolved) {
+					msg += ` (${result.conflicts_count || 'all'} conflicts auto-resolved)`;
+				}
+				msg += ' Opening in new tab...';
+				successMessage = msg;
 				window.open(result.url, '_blank');
 			} else {
 				error = result.message || 'Failed to create Merge Request';
