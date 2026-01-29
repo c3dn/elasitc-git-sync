@@ -1449,52 +1449,38 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
                 for (var r = 0; r < elasticRules.length; r++) {
                   var rule = elasticRules[r];
                   var ruleId = rule.rule_id || rule.id;
-                  var fileName = ruleId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json";
+                  var fileName = ruleId + ".json";
                   var filePath = gitPath ? gitPath + "/" + fileName : fileName;
-
                   var ruleContent = JSON.stringify(rule, null, 2);
-                  var encodedContent = encodeURIComponent(ruleContent).replace(/%([0-9A-F]{2})/g, function(match, p1) {
-                    return String.fromCharCode('0x' + p1);
-                  });
-                  var base64Content = btoa(encodedContent);
+                  var glFileUrl = glAutoApi + "/projects/" + glAutoProject + "/repository/files/" + encodeURIComponent(filePath);
 
-                  // Check if file exists
-                  var fileUrl = glAutoApi + "/projects/" + glAutoProject + "/repository/files/" + encodeURIComponent(filePath) + "?ref=" + encodeURIComponent(gitBranch);
-                  var fileExists = false;
-                  try {
-                    var fileResp = $http.send({
-                      url: fileUrl,
-                      method: "GET",
-                      headers: { "PRIVATE-TOKEN": gitToken },
-                      timeout: 10
-                    });
-                    fileExists = fileResp.statusCode === 200;
-                  } catch (err) {}
+                  // Try update (PUT) first, then create (POST)
+                  var exported = false;
+                  var methods = ["PUT", "POST"];
+                  for (var m = 0; m < methods.length && !exported; m++) {
+                    try {
+                      var commitResp = $http.send({
+                        url: glFileUrl,
+                        method: methods[m],
+                        headers: {
+                          "Authorization": "Bearer " + gitToken,
+                          "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                          branch: gitBranch,
+                          content: ruleContent,
+                          commit_message: "[Auto-Sync] " + (methods[m] === "POST" ? "Add" : "Update") + " rule: " + (rule.name || ruleId)
+                        }),
+                        timeout: 15
+                      });
 
-                  // Create or update file
-                  var commitUrl = glAutoApi + "/projects/" + glAutoProject + "/repository/files/" + encodeURIComponent(filePath);
-                  try {
-                    var commitResp = $http.send({
-                      url: commitUrl,
-                      method: fileExists ? "PUT" : "POST",
-                      headers: {
-                        "PRIVATE-TOKEN": gitToken,
-                        "Content-Type": "application/json"
-                      },
-                      body: JSON.stringify({
-                        branch: gitBranch,
-                        content: base64Content,
-                        encoding: "base64",
-                        commit_message: "[Auto-Sync] " + (fileExists ? "Update" : "Add") + " rule: " + (rule.name || ruleId)
-                      }),
-                      timeout: 15
-                    });
-
-                    if (commitResp.statusCode === 200 || commitResp.statusCode === 201) {
-                      summary.exported++;
+                      if (commitResp.statusCode === 200 || commitResp.statusCode === 201) {
+                        summary.exported++;
+                        exported = true;
+                      }
+                    } catch (err) {
+                      console.log("[Auto-Sync] GitLab " + methods[m] + " error: " + String(err));
                     }
-                  } catch (err) {
-                    console.log("[Auto-Sync] Error committing rule: " + String(err));
                   }
                 }
               }
@@ -1509,21 +1495,19 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
                 for (var r = 0; r < elasticRules.length; r++) {
                   var rule = elasticRules[r];
                   var ruleId = rule.rule_id || rule.id;
-                  var fileName = ruleId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json";
+                  var fileName = ruleId + ".json";
                   var filePath = gitPath ? gitPath + "/" + fileName : fileName;
-
                   var ruleContent = JSON.stringify(rule, null, 2);
-                  var base64Content = btoa(unescape(encodeURIComponent(ruleContent)));
 
-                  // Check if file exists
-                  var fileUrl = "https://api.github.com/repos/" + ghRepoPath + "/contents/" + filePath + "?ref=" + encodeURIComponent(gitBranch);
+                  // Check if file exists (need SHA for updates)
+                  var ghFileUrl = "https://api.github.com/repos/" + ghRepoPath + "/contents/" + filePath + "?ref=" + encodeURIComponent(gitBranch);
                   var fileSha = null;
                   try {
                     var fileResp = $http.send({
-                      url: fileUrl,
+                      url: ghFileUrl,
                       method: "GET",
                       headers: {
-                        "Authorization": "Bearer " + gitToken,
+                        "Authorization": "token " + gitToken,
                         "Accept": "application/vnd.github.v3+json"
                       },
                       timeout: 10
@@ -1535,24 +1519,24 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
                   } catch (err) {}
 
                   // Create or update file
-                  var commitUrl = "https://api.github.com/repos/" + ghRepoPath + "/contents/" + filePath;
-                  var commitBody = {
+                  var ghCommitUrl = "https://api.github.com/repos/" + ghRepoPath + "/contents/" + filePath;
+                  var ghCommitBody = {
                     message: "[Auto-Sync] " + (fileSha ? "Update" : "Add") + " rule: " + (rule.name || ruleId),
-                    content: base64Content,
+                    content: $security.base64Encode(ruleContent),
                     branch: gitBranch
                   };
-                  if (fileSha) commitBody.sha = fileSha;
+                  if (fileSha) ghCommitBody.sha = fileSha;
 
                   try {
                     var commitResp = $http.send({
-                      url: commitUrl,
+                      url: ghCommitUrl,
                       method: "PUT",
                       headers: {
-                        "Authorization": "Bearer " + gitToken,
+                        "Authorization": "token " + gitToken,
                         "Accept": "application/vnd.github.v3+json",
                         "Content-Type": "application/json"
                       },
-                      body: JSON.stringify(commitBody),
+                      body: JSON.stringify(ghCommitBody),
                       timeout: 15
                     });
 
@@ -1560,7 +1544,7 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
                       summary.exported++;
                     }
                   } catch (err) {
-                    console.log("[Auto-Sync] Error committing rule: " + String(err));
+                    console.log("[Auto-Sync] GitHub error: " + String(err));
                   }
                 }
               }
