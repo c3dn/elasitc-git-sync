@@ -8,9 +8,7 @@ services:
     ports:
       - "8090:8090"
     volumes:
-      - ./backend/pb_data:/pb/pb_data
-      - ./backend/pb_migrations:/pb/pb_migrations
-      - ./backend/pb_hooks:/pb/pb_hooks
+      - pb_data:/pb_data
       # Mount custom CA certificates (optional)
       # - ./certs:/custom-ca:ro
     command: serve --http=0.0.0.0:8090 --dev
@@ -31,6 +29,9 @@ services:
       - ORIGIN=http://localhost:3000
     depends_on:
       - pocketbase
+
+volumes:
+  pb_data:
 
 networks:
   default:

@@ -6,18 +6,14 @@ on:
       - main
       - master
     paths:
-      - 'backend/main.go'
-      - 'backend/Dockerfile'
-      - 'backend/entrypoint.sh'
+      - 'backend/**'
       - '.github/workflows/build-backend.yml'
   pull_request:
     branches:
       - main
       - master
     paths:
-      - 'backend/main.go'
-      - 'backend/Dockerfile'
-      - 'backend/entrypoint.sh'
+      - 'backend/**'
   workflow_dispatch:
 
 env:
