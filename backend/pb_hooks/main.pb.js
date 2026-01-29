@@ -5,6 +5,21 @@
  * Compatible with PocketBase v0.23+
  */
 
+// Helper: parse a GitLab URL into base API URL and project path.
+// Works with gitlab.com and any self-hosted GitLab instance.
+// Input:  "https://gitlab.example.com/group/subgroup/project"
+// Output: { apiBase: "https://gitlab.example.com/api/v4", project: "group%2Fsubgroup%2Fproject" }
+function parseGitLabUrl(url) {
+  var cleaned = url.replace(/\.git$/, "");
+  // Match: protocol + host (with optional port) + path
+  var m = cleaned.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
+  if (!m) return null;
+  return {
+    apiBase: m[1] + "/api/v4",
+    project: encodeURIComponent(m[2])
+  };
+}
+
 // SSL Status API
 routerAdd("GET", "/api/settings/ssl-status", function(e) {
   var disableSslVerify = $os.getenv("DISABLE_SSL_VERIFY") === "true";
@@ -173,15 +188,14 @@ routerAdd("POST", "/api/connection/test", function(e) {
     var token = data.config.access_token;
 
     if (provider === "gitlab") {
-      var match = gitUrl.match(/gitlab\.com\/(.+?)(?:\.git)?$/);
-      if (!match) {
+      var gl = parseGitLabUrl(gitUrl);
+      if (!gl) {
         return e.json(200, { success: false, message: "Invalid GitLab URL format" });
       }
 
-      var projectPath = encodeURIComponent(match[1]);
       try {
         var resp = $http.send({
-          url: "https://gitlab.com/api/v4/projects/" + projectPath,
+          url: gl.apiBase + "/projects/" + gl.project,
           method: "GET",
           headers: { "Authorization": "Bearer " + token },
           timeout: 10
@@ -315,13 +329,14 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
       }
 
       if (gitProvider === "gitlab") {
-        var glMatch = gitRepoUrl.match(/gitlab\.com\/(.+?)$/);
-        console.log("GitLab URL match: " + (glMatch ? glMatch[1] : "no match"));
-        if (glMatch) {
-          var glProjectPath = encodeURIComponent(glMatch[1]);
+        var glExport = parseGitLabUrl(gitRepoUrl);
+        console.log("GitLab URL parse: " + (glExport ? "OK" : "failed"));
+        if (glExport) {
+          var glApiBase = glExport.apiBase;
+          var glProjectPath = glExport.project;
 
           // Check if the branch exists, create it if not
-          var branchCheckUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/branches/" + encodeURIComponent(gitBranch);
+          var branchCheckUrl = glApiBase + "/projects/" + glProjectPath + "/repository/branches/" + encodeURIComponent(gitBranch);
           try {
             var branchResp = $http.send({
               url: branchCheckUrl,
@@ -333,7 +348,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
               // Branch doesn't exist, create it from default branch
               console.log("Branch '" + gitBranch + "' doesn't exist, creating it...");
               var defaultBranch = gitRepo.get("default_branch") || "main";
-              var createBranchUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/branches";
+              var createBranchUrl = glApiBase + "/projects/" + glProjectPath + "/repository/branches";
               var createResp = $http.send({
                 url: createBranchUrl,
                 method: "POST",
@@ -362,7 +377,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
           // First, get existing files in Git to detect deletions
           var existingFiles = [];
           var treePath = gitPath ? encodeURIComponent(gitPath) : "";
-          var treeUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100";
+          var treeUrl = glApiBase + "/projects/" + glProjectPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100";
 
           try {
             var treeResp = $http.send({
@@ -391,7 +406,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
             var fileName = ruleId + ".json";
             var filePath = gitPath ? gitPath + "/" + fileName : fileName;
             var content = JSON.stringify(rule, null, 2);
-            var glApiUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(filePath);
+            var glApiUrl = glApiBase + "/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(filePath);
 
             // Try update (PUT) first, then create (POST)
             var success = false;
@@ -434,7 +449,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
             if (!elasticRuleIds[fileRuleId]) {
               // Rule no longer exists in Elastic, delete from Git
-              var deleteUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(existingFile.path);
+              var deleteUrl = glApiBase + "/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(existingFile.path);
               try {
                 console.log("Deleting removed rule: " + existingFile.name);
                 var delResp = $http.send({
@@ -564,11 +579,12 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
       // Fetch rules from Git
       if (gitProvider === "gitlab") {
-        var glMatchImport = gitRepoUrl.match(/gitlab\.com\/(.+?)$/);
-        if (glMatchImport) {
-          var glProjPath = encodeURIComponent(glMatchImport[1]);
+        var glImport = parseGitLabUrl(gitRepoUrl);
+        if (glImport) {
+          var glImportApi = glImport.apiBase;
+          var glProjPath = glImport.project;
           var treePath = gitPath ? encodeURIComponent(gitPath) : "";
-          var treeUrl = "https://gitlab.com/api/v4/projects/" + glProjPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100";
+          var treeUrl = glImportApi + "/projects/" + glProjPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100";
 
           try {
             var treeResp = $http.send({
@@ -582,7 +598,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
               var files = JSON.parse(treeResp.raw);
               for (var f = 0; f < files.length; f++) {
                 if (files[f].name.endsWith(".json")) {
-                  var fileUrl = "https://gitlab.com/api/v4/projects/" + glProjPath + "/repository/files/" + encodeURIComponent(files[f].path) + "/raw?ref=" + gitBranch;
+                  var fileUrl = glImportApi + "/projects/" + glProjPath + "/repository/files/" + encodeURIComponent(files[f].path) + "/raw?ref=" + gitBranch;
                   try {
                     var fileResp = $http.send({
                       url: fileUrl,
@@ -871,13 +887,12 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
     var gitRepoUrl = gitRepo.get("url").replace(/\.git$/, "");
 
     if (gitProvider === "gitlab") {
-      var glMatch = gitRepoUrl.match(/gitlab\.com\/(.+?)$/);
-      if (!glMatch) {
+      var glMr = parseGitLabUrl(gitRepoUrl);
+      if (!glMr) {
         return e.json(400, { success: false, message: "Invalid GitLab URL" });
       }
 
-      var glProjectPath = encodeURIComponent(glMatch[1]);
-      var mrApiUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/merge_requests";
+      var mrApiUrl = glMr.apiBase + "/projects/" + glMr.project + "/merge_requests";
 
       var mrResp = $http.send({
         url: mrApiUrl,
@@ -1085,9 +1100,10 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
 
             // Export to Git (GitLab)
             if (gitProvider === "gitlab" && elasticRules.length > 0) {
-              var glMatch = gitRepoUrl.match(/gitlab\.com\/(.+?)$/);
-              if (glMatch) {
-                var glProjectPath = encodeURIComponent(glMatch[1]);
+              var glAuto = parseGitLabUrl(gitRepoUrl);
+              if (glAuto) {
+                var glAutoApi = glAuto.apiBase;
+                var glAutoProject = glAuto.project;
 
                 // Commit each rule
                 for (var r = 0; r < elasticRules.length; r++) {
@@ -1103,7 +1119,7 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
                   var base64Content = btoa(encodedContent);
 
                   // Check if file exists
-                  var fileUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(filePath) + "?ref=" + encodeURIComponent(gitBranch);
+                  var fileUrl = glAutoApi + "/projects/" + glAutoProject + "/repository/files/" + encodeURIComponent(filePath) + "?ref=" + encodeURIComponent(gitBranch);
                   var fileExists = false;
                   try {
                     var fileResp = $http.send({
@@ -1116,7 +1132,7 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
                   } catch (err) {}
 
                   // Create or update file
-                  var commitUrl = "https://gitlab.com/api/v4/projects/" + glProjectPath + "/repository/files/" + encodeURIComponent(filePath);
+                  var commitUrl = glAutoApi + "/projects/" + glAutoProject + "/repository/files/" + encodeURIComponent(filePath);
                   try {
                     var commitResp = $http.send({
                       url: commitUrl,
