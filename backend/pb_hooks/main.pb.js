@@ -5,21 +5,6 @@
  * Compatible with PocketBase v0.23+
  */
 
-// Helper: parse a GitLab URL into base API URL and project path.
-// Works with gitlab.com and any self-hosted GitLab instance.
-// Input:  "https://gitlab.example.com/group/subgroup/project"
-// Output: { apiBase: "https://gitlab.example.com/api/v4", project: "group%2Fsubgroup%2Fproject" }
-function parseGitLabUrl(url) {
-  var cleaned = url.replace(/\.git$/, "");
-  // Match: protocol + host (with optional port) + path
-  var m = cleaned.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
-  if (!m) return null;
-  return {
-    apiBase: m[1] + "/api/v4",
-    project: encodeURIComponent(m[2])
-  };
-}
-
 // SSL Status API
 routerAdd("GET", "/api/settings/ssl-status", function(e) {
   var disableSslVerify = $os.getenv("DISABLE_SSL_VERIFY") === "true";
@@ -188,14 +173,16 @@ routerAdd("POST", "/api/connection/test", function(e) {
     var token = data.config.access_token;
 
     if (provider === "gitlab") {
-      var gl = parseGitLabUrl(gitUrl);
-      if (!gl) {
+      var glUrlMatch = gitUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
+      if (!glUrlMatch) {
         return e.json(200, { success: false, message: "Invalid GitLab URL format" });
       }
+      var glApiBase = glUrlMatch[1] + "/api/v4";
+      var glProject = encodeURIComponent(glUrlMatch[2]);
 
       try {
         var resp = $http.send({
-          url: gl.apiBase + "/projects/" + gl.project,
+          url: glApiBase + "/projects/" + glProject,
           method: "GET",
           headers: { "Authorization": "Bearer " + token },
           timeout: 10
@@ -329,11 +316,11 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
       }
 
       if (gitProvider === "gitlab") {
-        var glExport = parseGitLabUrl(gitRepoUrl);
-        console.log("GitLab URL parse: " + (glExport ? "OK" : "failed"));
-        if (glExport) {
-          var glApiBase = glExport.apiBase;
-          var glProjectPath = glExport.project;
+        var glExportMatch = gitRepoUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
+        console.log("GitLab URL parse: " + (glExportMatch ? "OK" : "failed"));
+        if (glExportMatch) {
+          var glApiBase = glExportMatch[1] + "/api/v4";
+          var glProjectPath = encodeURIComponent(glExportMatch[2]);
 
           // Check if the branch exists, create it if not
           var branchCheckUrl = glApiBase + "/projects/" + glProjectPath + "/repository/branches/" + encodeURIComponent(gitBranch);
@@ -579,10 +566,10 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
       // Fetch rules from Git
       if (gitProvider === "gitlab") {
-        var glImport = parseGitLabUrl(gitRepoUrl);
-        if (glImport) {
-          var glImportApi = glImport.apiBase;
-          var glProjPath = glImport.project;
+        var glImportMatch = gitRepoUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
+        if (glImportMatch) {
+          var glImportApi = glImportMatch[1] + "/api/v4";
+          var glProjPath = encodeURIComponent(glImportMatch[2]);
           var treePath = gitPath ? encodeURIComponent(gitPath) : "";
           var treeUrl = glImportApi + "/projects/" + glProjPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100";
 
@@ -887,12 +874,12 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
     var gitRepoUrl = gitRepo.get("url").replace(/\.git$/, "");
 
     if (gitProvider === "gitlab") {
-      var glMr = parseGitLabUrl(gitRepoUrl);
-      if (!glMr) {
+      var glMrMatch = gitRepoUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
+      if (!glMrMatch) {
         return e.json(400, { success: false, message: "Invalid GitLab URL" });
       }
 
-      var mrApiUrl = glMr.apiBase + "/projects/" + glMr.project + "/merge_requests";
+      var mrApiUrl = glMrMatch[1] + "/api/v4/projects/" + encodeURIComponent(glMrMatch[2]) + "/merge_requests";
 
       var mrResp = $http.send({
         url: mrApiUrl,
@@ -1100,10 +1087,10 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
 
             // Export to Git (GitLab)
             if (gitProvider === "gitlab" && elasticRules.length > 0) {
-              var glAuto = parseGitLabUrl(gitRepoUrl);
-              if (glAuto) {
-                var glAutoApi = glAuto.apiBase;
-                var glAutoProject = glAuto.project;
+              var glAutoMatch = gitRepoUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
+              if (glAutoMatch) {
+                var glAutoApi = glAutoMatch[1] + "/api/v4";
+                var glAutoProject = encodeURIComponent(glAutoMatch[2]);
 
                 // Commit each rule
                 for (var r = 0; r < elasticRules.length; r++) {
