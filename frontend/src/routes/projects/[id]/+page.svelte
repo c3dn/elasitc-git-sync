@@ -58,6 +58,7 @@
 	let projectId = $derived($page.params.id);
 	let testEnv = $derived(environments.find(e => e.name === 'test'));
 	let prodEnv = $derived(environments.find(e => e.name === 'production'));
+	let isExportOnly = $derived((project as any)?.sync_mode === 'export_only');
 
 	onMount(async () => {
 		await loadAll();
@@ -356,181 +357,242 @@
 		<div class="card p-6 animate-fade-in" style="animation-delay: 100ms; opacity: 0;">
 			<h2 class="text-lg font-semibold text-gray-900 mb-6">Sync Workflow</h2>
 
-			<div class="flex items-stretch gap-4">
-				<!-- Step 1: Test Environment -->
-				<div class="flex-1 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-					<div class="flex items-center gap-2 mb-3">
-						<div class="p-2 bg-yellow-100 rounded-lg">
-							<TestTube class="w-5 h-5 text-yellow-600" />
-						</div>
-						<div>
-							<h3 class="font-semibold text-gray-900">Test Environment</h3>
-							{#if testEnv}
-								<p class="text-xs text-gray-500">{testEnv.elastic_space}</p>
-							{/if}
-						</div>
-					</div>
-
-					{#if testEnv}
-						<div class="space-y-3">
-							<div class="flex items-center justify-between text-sm">
-								<span class="text-gray-600">Rules:</span>
-								<span class="font-semibold text-gray-900">{testRuleCount}</span>
+			{#if isExportOnly}
+				<!-- Export Only Workflow -->
+				<div class="max-w-md">
+					<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+						<div class="flex items-center gap-2 mb-3">
+							<div class="p-2 bg-yellow-100 rounded-lg">
+								<TestTube class="w-5 h-5 text-yellow-600" />
 							</div>
-							<div class="flex items-center justify-between text-sm">
-								<span class="text-gray-600">Branch:</span>
-								<span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{testEnv.git_branch}</span>
-							</div>
-
-							<button
-								on:click={openRuleSelection}
-								disabled={syncingTest}
-								class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
-							>
-								{#if syncingTest}
-									<Loader class="w-4 h-4 animate-spin" />
-									Syncing...
-								{:else}
-									<Upload class="w-4 h-4" />
-									Export to Git
+							<div>
+								<h3 class="font-semibold text-gray-900">Export to Git</h3>
+								{#if testEnv}
+									<p class="text-xs text-gray-500">{testEnv.elastic_space}</p>
 								{/if}
-							</button>
-						</div>
-					{:else}
-						<p class="text-sm text-yellow-700">No test environment configured</p>
-					{/if}
-				</div>
-
-				<!-- Arrow 1 -->
-				<div class="flex items-center">
-					<ChevronRight class="w-8 h-8 text-gray-300" />
-				</div>
-
-				<!-- Step 2: Create MR -->
-				<div class="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-4">
-					<div class="flex items-center gap-2 mb-3">
-						<div class="p-2 bg-blue-100 rounded-lg">
-							<GitMerge class="w-5 h-5 text-blue-600" />
-						</div>
-						<div>
-							<h3 class="font-semibold text-gray-900">Merge Request</h3>
-							<p class="text-xs text-gray-500">Review & Approve</p>
-						</div>
-					</div>
-
-					{#if testEnv && prodEnv}
-						<div class="space-y-3">
-							<div class="text-sm text-gray-600">
-								<div class="flex items-center gap-2 mb-1">
-									<GitBranch class="w-4 h-4" />
-									<span class="font-mono text-xs">{testEnv.git_branch}</span>
-								</div>
-								<div class="flex items-center justify-center">
-									<ArrowDown class="w-4 h-4 text-gray-400" />
-								</div>
-								<div class="flex items-center gap-2 mt-1">
-									<GitBranch class="w-4 h-4" />
-									<span class="font-mono text-xs">{prodEnv.git_branch}</span>
-								</div>
 							</div>
+						</div>
 
-							<button
-								on:click={createMergeRequest}
-								disabled={creatingMR}
-								class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
-							>
-								{#if creatingMR}
-									<Loader class="w-4 h-4 animate-spin" />
-									Creating...
-								{:else}
-									<GitMerge class="w-4 h-4" />
-									Create MR
-								{/if}
-							</button>
+						{#if testEnv}
+							<div class="space-y-3">
+								<div class="flex items-center justify-between text-sm">
+									<span class="text-gray-600">Rules:</span>
+									<span class="font-semibold text-gray-900">{testRuleCount}</span>
+								</div>
+								<div class="flex items-center justify-between text-sm">
+									<span class="text-gray-600">Branch:</span>
+									<span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{testEnv.git_branch}</span>
+								</div>
 
-							{#if project.expand?.git_repository}
-								<a
-									href="{stripGitSuffix(project.expand.git_repository.url)}/-/merge_requests"
-									target="_blank"
-									class="block text-center text-xs text-blue-600 hover:underline"
+								<button
+									on:click={openRuleSelection}
+									disabled={syncingTest}
+									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
 								>
-									View open MRs <ExternalLink class="w-3 h-3 inline" />
-								</a>
-							{/if}
-						</div>
-					{:else}
-						<p class="text-sm text-blue-700">Configure both environments</p>
-					{/if}
+									{#if syncingTest}
+										<Loader class="w-4 h-4 animate-spin" />
+										Syncing...
+									{:else}
+										<Upload class="w-4 h-4" />
+										Export to Git
+									{/if}
+								</button>
+							</div>
+						{:else}
+							<p class="text-sm text-yellow-700">No environment configured</p>
+						{/if}
+					</div>
 				</div>
 
-				<!-- Arrow 2 -->
-				<div class="flex items-center">
-					<ChevronRight class="w-8 h-8 text-gray-300" />
+				<!-- Workflow Explanation -->
+				<div class="mt-6 pt-4 border-t border-gray-200">
+					<h4 class="text-sm font-medium text-gray-700 mb-2">How it works:</h4>
+					<ol class="text-sm text-gray-600 space-y-1">
+						<li class="flex items-start gap-2">
+							<span class="flex-shrink-0 w-5 h-5 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center text-xs font-medium">1</span>
+							<span>Export rules from <strong>{testEnv?.elastic_space || 'Elastic'}</strong> to <code class="text-xs bg-gray-100 px-1 rounded">{testEnv?.git_branch || 'main'}</code> branch in Git</span>
+						</li>
+					</ol>
+					<p class="text-xs text-gray-500 mt-2">This project is configured for one-way export only (Elastic to Git).</p>
 				</div>
+			{:else}
+				<!-- Full Workflow -->
+				<div class="flex items-stretch gap-4">
+					<!-- Step 1: Test Environment -->
+					<div class="flex-1 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+						<div class="flex items-center gap-2 mb-3">
+							<div class="p-2 bg-yellow-100 rounded-lg">
+								<TestTube class="w-5 h-5 text-yellow-600" />
+							</div>
+							<div>
+								<h3 class="font-semibold text-gray-900">Test Environment</h3>
+								{#if testEnv}
+									<p class="text-xs text-gray-500">{testEnv.elastic_space}</p>
+								{/if}
+							</div>
+						</div>
 
-				<!-- Step 3: Production Environment -->
-				<div class="flex-1 bg-green-50 border border-green-200 rounded-lg p-4">
-					<div class="flex items-center gap-2 mb-3">
-						<div class="p-2 bg-green-100 rounded-lg">
-							<Rocket class="w-5 h-5 text-green-600" />
-						</div>
-						<div>
-							<h3 class="font-semibold text-gray-900">Production</h3>
-							{#if prodEnv}
-								<p class="text-xs text-gray-500">{prodEnv.elastic_space}</p>
-							{/if}
-						</div>
+						{#if testEnv}
+							<div class="space-y-3">
+								<div class="flex items-center justify-between text-sm">
+									<span class="text-gray-600">Rules:</span>
+									<span class="font-semibold text-gray-900">{testRuleCount}</span>
+								</div>
+								<div class="flex items-center justify-between text-sm">
+									<span class="text-gray-600">Branch:</span>
+									<span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{testEnv.git_branch}</span>
+								</div>
+
+								<button
+									on:click={openRuleSelection}
+									disabled={syncingTest}
+									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
+								>
+									{#if syncingTest}
+										<Loader class="w-4 h-4 animate-spin" />
+										Syncing...
+									{:else}
+										<Upload class="w-4 h-4" />
+										Export to Git
+									{/if}
+								</button>
+							</div>
+						{:else}
+							<p class="text-sm text-yellow-700">No test environment configured</p>
+						{/if}
 					</div>
 
-					{#if prodEnv}
-						<div class="space-y-3">
-							<div class="flex items-center justify-between text-sm">
-								<span class="text-gray-600">Rules:</span>
-								<span class="font-semibold text-gray-900">{prodRuleCount}</span>
-							</div>
-							<div class="flex items-center justify-between text-sm">
-								<span class="text-gray-600">Branch:</span>
-								<span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{prodEnv.git_branch}</span>
-							</div>
+					<!-- Arrow 1 -->
+					<div class="flex items-center">
+						<ChevronRight class="w-8 h-8 text-gray-300" />
+					</div>
 
-							<button
-								on:click={syncGitToProd}
-								disabled={syncingProd}
-								class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
-							>
-								{#if syncingProd}
-									<Loader class="w-4 h-4 animate-spin" />
-									Syncing...
-								{:else}
-									<Download class="w-4 h-4" />
-									Import from Git
-								{/if}
-							</button>
+					<!-- Step 2: Create MR -->
+					<div class="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-4">
+						<div class="flex items-center gap-2 mb-3">
+							<div class="p-2 bg-blue-100 rounded-lg">
+								<GitMerge class="w-5 h-5 text-blue-600" />
+							</div>
+							<div>
+								<h3 class="font-semibold text-gray-900">Merge Request</h3>
+								<p class="text-xs text-gray-500">Review & Approve</p>
+							</div>
 						</div>
-					{:else}
-						<p class="text-sm text-green-700">No prod environment configured</p>
-					{/if}
-				</div>
-			</div>
 
-			<!-- Workflow Explanation -->
-			<div class="mt-6 pt-4 border-t border-gray-200">
-				<h4 class="text-sm font-medium text-gray-700 mb-2">How it works:</h4>
-				<ol class="text-sm text-gray-600 space-y-1">
-					<li class="flex items-start gap-2">
-						<span class="flex-shrink-0 w-5 h-5 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center text-xs font-medium">1</span>
-						<span>Export rules from <strong>{testEnv?.elastic_space || 'Test'}</strong> to <code class="text-xs bg-gray-100 px-1 rounded">{testEnv?.git_branch || 'develop'}</code> branch</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-medium">2</span>
-						<span>Create MR from <code class="text-xs bg-gray-100 px-1 rounded">{testEnv?.git_branch || 'develop'}</code> to <code class="text-xs bg-gray-100 px-1 rounded">{prodEnv?.git_branch || 'main'}</code>, review and merge</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="flex-shrink-0 w-5 h-5 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-medium">3</span>
-						<span>Import rules from <code class="text-xs bg-gray-100 px-1 rounded">{prodEnv?.git_branch || 'main'}</code> branch to <strong>{prodEnv?.elastic_space || 'Production'}</strong></span>
-					</li>
-				</ol>
-			</div>
+						{#if testEnv && prodEnv}
+							<div class="space-y-3">
+								<div class="text-sm text-gray-600">
+									<div class="flex items-center gap-2 mb-1">
+										<GitBranch class="w-4 h-4" />
+										<span class="font-mono text-xs">{testEnv.git_branch}</span>
+									</div>
+									<div class="flex items-center justify-center">
+										<ArrowDown class="w-4 h-4 text-gray-400" />
+									</div>
+									<div class="flex items-center gap-2 mt-1">
+										<GitBranch class="w-4 h-4" />
+										<span class="font-mono text-xs">{prodEnv.git_branch}</span>
+									</div>
+								</div>
+
+								<button
+									on:click={createMergeRequest}
+									disabled={creatingMR}
+									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
+								>
+									{#if creatingMR}
+										<Loader class="w-4 h-4 animate-spin" />
+										Creating...
+									{:else}
+										<GitMerge class="w-4 h-4" />
+										Create MR
+									{/if}
+								</button>
+
+								{#if project.expand?.git_repository}
+									<a
+										href="{stripGitSuffix(project.expand.git_repository.url)}/-/merge_requests"
+										target="_blank"
+										class="block text-center text-xs text-blue-600 hover:underline"
+									>
+										View open MRs <ExternalLink class="w-3 h-3 inline" />
+									</a>
+								{/if}
+							</div>
+						{:else}
+							<p class="text-sm text-blue-700">Configure both environments</p>
+						{/if}
+					</div>
+
+					<!-- Arrow 2 -->
+					<div class="flex items-center">
+						<ChevronRight class="w-8 h-8 text-gray-300" />
+					</div>
+
+					<!-- Step 3: Production Environment -->
+					<div class="flex-1 bg-green-50 border border-green-200 rounded-lg p-4">
+						<div class="flex items-center gap-2 mb-3">
+							<div class="p-2 bg-green-100 rounded-lg">
+								<Rocket class="w-5 h-5 text-green-600" />
+							</div>
+							<div>
+								<h3 class="font-semibold text-gray-900">Production</h3>
+								{#if prodEnv}
+									<p class="text-xs text-gray-500">{prodEnv.elastic_space}</p>
+								{/if}
+							</div>
+						</div>
+
+						{#if prodEnv}
+							<div class="space-y-3">
+								<div class="flex items-center justify-between text-sm">
+									<span class="text-gray-600">Rules:</span>
+									<span class="font-semibold text-gray-900">{prodRuleCount}</span>
+								</div>
+								<div class="flex items-center justify-between text-sm">
+									<span class="text-gray-600">Branch:</span>
+									<span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{prodEnv.git_branch}</span>
+								</div>
+
+								<button
+									on:click={syncGitToProd}
+									disabled={syncingProd}
+									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
+								>
+									{#if syncingProd}
+										<Loader class="w-4 h-4 animate-spin" />
+										Syncing...
+									{:else}
+										<Download class="w-4 h-4" />
+										Import from Git
+									{/if}
+								</button>
+							</div>
+						{:else}
+							<p class="text-sm text-green-700">No prod environment configured</p>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Workflow Explanation -->
+				<div class="mt-6 pt-4 border-t border-gray-200">
+					<h4 class="text-sm font-medium text-gray-700 mb-2">How it works:</h4>
+					<ol class="text-sm text-gray-600 space-y-1">
+						<li class="flex items-start gap-2">
+							<span class="flex-shrink-0 w-5 h-5 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center text-xs font-medium">1</span>
+							<span>Export rules from <strong>{testEnv?.elastic_space || 'Test'}</strong> to <code class="text-xs bg-gray-100 px-1 rounded">{testEnv?.git_branch || 'develop'}</code> branch</span>
+						</li>
+						<li class="flex items-start gap-2">
+							<span class="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-medium">2</span>
+							<span>Create MR from <code class="text-xs bg-gray-100 px-1 rounded">{testEnv?.git_branch || 'develop'}</code> to <code class="text-xs bg-gray-100 px-1 rounded">{prodEnv?.git_branch || 'main'}</code>, review and merge</span>
+						</li>
+						<li class="flex items-start gap-2">
+							<span class="flex-shrink-0 w-5 h-5 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-medium">3</span>
+							<span>Import rules from <code class="text-xs bg-gray-100 px-1 rounded">{prodEnv?.git_branch || 'main'}</code> branch to <strong>{prodEnv?.elastic_space || 'Production'}</strong></span>
+						</li>
+					</ol>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Quick Links & Info -->

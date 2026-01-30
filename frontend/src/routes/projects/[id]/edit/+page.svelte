@@ -34,6 +34,7 @@
 	let isActive = $state(true);
 	let syncEnabled = $state(false);
 	let autoSyncInterval = $state(0);
+	let syncMode = $state<'full' | 'export_only'>('full');
 
 	// Test environment form
 	let testSpace = $state('');
@@ -67,6 +68,7 @@
 			isActive = project.is_active;
 			syncEnabled = project.sync_enabled || false;
 			autoSyncInterval = project.auto_sync_interval || 0;
+			syncMode = (project as any).sync_mode || 'full';
 
 			// Load environments
 			environments = await pb.collection('environments').getFullList({
@@ -139,7 +141,8 @@
 				git_path: gitPath || '',
 				is_active: isActive,
 				sync_enabled: syncEnabled,
-				auto_sync_interval: syncEnabled ? autoSyncInterval : 0
+				auto_sync_interval: syncEnabled ? autoSyncInterval : 0,
+				sync_mode: syncMode
 			});
 
 			// Update or create test environment
@@ -324,6 +327,33 @@
 						Project is active
 					</label>
 				</div>
+
+				<!-- Sync Mode -->
+				<div>
+					<label class="block text-sm font-medium text-gray-700 mb-2">
+						Sync Mode
+					</label>
+					<div class="grid grid-cols-2 gap-3">
+						<button
+							type="button"
+							on:click={() => syncMode = 'full'}
+							class="flex flex-col items-start p-3 border-2 rounded-lg transition-colors text-left
+								{syncMode === 'full' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}"
+						>
+							<span class="text-sm font-semibold text-gray-900">Full Workflow</span>
+							<span class="text-xs text-gray-500 mt-1">Export, merge requests, and import to production</span>
+						</button>
+						<button
+							type="button"
+							on:click={() => syncMode = 'export_only'}
+							class="flex flex-col items-start p-3 border-2 rounded-lg transition-colors text-left
+								{syncMode === 'export_only' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}"
+						>
+							<span class="text-sm font-semibold text-gray-900">Export Only</span>
+							<span class="text-xs text-gray-500 mt-1">Only export rules from Elastic to Git</span>
+						</button>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -390,8 +420,12 @@
 						<TestTube class="w-5 h-5 text-yellow-600" />
 					</div>
 					<div>
-						<h2 class="text-lg font-semibold text-gray-900">Test Environment</h2>
-						<p class="text-sm text-gray-500">Development and testing configuration</p>
+						<h2 class="text-lg font-semibold text-gray-900">
+							{syncMode === 'export_only' ? 'Environment' : 'Test Environment'}
+						</h2>
+						<p class="text-sm text-gray-500">
+							{syncMode === 'export_only' ? 'Elastic space and Git branch for export' : 'Development and testing configuration'}
+						</p>
 					</div>
 				</div>
 				{#if environments.find(e => e.name === 'test')}
@@ -444,7 +478,8 @@
 			</div>
 		</div>
 
-		<!-- Production Environment -->
+		<!-- Production Environment (full mode only) -->
+		{#if syncMode === 'full'}
 		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
 			<div class="flex items-center justify-between mb-4">
 				<div class="flex items-center gap-3">
@@ -505,6 +540,7 @@
 				</div>
 			</div>
 		</div>
+		{/if}
 
 		<!-- Actions -->
 		<div class="flex items-center gap-4">

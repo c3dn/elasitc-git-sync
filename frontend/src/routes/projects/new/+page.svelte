@@ -6,8 +6,13 @@
 	import type { ElasticInstance, GitRepository } from '$types';
 
 	let step = $state(1);
-	const totalSteps = 4;
-	const stepNames = ['Project Info', 'Connections', 'Test Environment', 'Prod Environment'];
+	let syncMode = $state<'full' | 'export_only'>('full');
+	let totalSteps = $derived(syncMode === 'export_only' ? 3 : 4);
+	let stepNames = $derived(
+		syncMode === 'export_only'
+			? ['Project Info', 'Connections', 'Environment']
+			: ['Project Info', 'Connections', 'Test Environment', 'Prod Environment']
+	);
 
 	// Form data - Project
 	let name = $state('');
@@ -74,6 +79,13 @@
 		}
 	});
 
+	// Clamp step when sync mode changes (e.g. from full to export_only while on step 4)
+	$effect(() => {
+		if (step > totalSteps) {
+			step = totalSteps;
+		}
+	});
+
 	function nextStep() {
 		if (step < totalSteps) step++;
 	}
@@ -96,7 +108,8 @@
 				git_repository: gitRepositoryId,
 				git_path: gitPath || undefined,
 				is_active: true,
-				sync_enabled: true
+				sync_enabled: true,
+				sync_mode: syncMode
 			};
 
 			const project = await pb.collection('projects').create(projectData);
@@ -111,15 +124,17 @@
 				auto_deploy: true
 			});
 
-			// Create Production environment
-			await pb.collection('environments').create({
-				project: project.id,
-				name: 'production',
-				elastic_space: prodSpace,
-				git_branch: prodBranch,
-				requires_approval: true,
-				auto_deploy: false
-			});
+			// Create Production environment (only for full mode)
+			if (syncMode === 'full') {
+				await pb.collection('environments').create({
+					project: project.id,
+					name: 'production',
+					elastic_space: prodSpace,
+					git_branch: prodBranch,
+					requires_approval: true,
+					auto_deploy: false
+				});
+			}
 
 			goto('/projects/' + project.id);
 		} catch (err: any) {
@@ -230,6 +245,33 @@
 						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 					></textarea>
 				</div>
+
+				<!-- Sync Mode -->
+				<div>
+					<label class="block text-sm font-medium text-gray-700 mb-2">
+						Sync Mode *
+					</label>
+					<div class="grid grid-cols-2 gap-3">
+						<button
+							type="button"
+							on:click={() => syncMode = 'full'}
+							class="flex flex-col items-start p-4 border-2 rounded-lg transition-colors
+								{syncMode === 'full' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}"
+						>
+							<span class="text-sm font-semibold text-gray-900">Full Workflow</span>
+							<span class="text-xs text-gray-500 mt-1 text-left">Export to Git, create merge requests, and import to production</span>
+						</button>
+						<button
+							type="button"
+							on:click={() => syncMode = 'export_only'}
+							class="flex flex-col items-start p-4 border-2 rounded-lg transition-colors
+								{syncMode === 'export_only' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}"
+						>
+							<span class="text-sm font-semibold text-gray-900">Export Only</span>
+							<span class="text-xs text-gray-500 mt-1 text-left">Only export rules from Elastic to Git (one-way sync)</span>
+						</button>
+					</div>
+				</div>
 			</div>
 		{/if}
 
@@ -310,7 +352,7 @@
 			</div>
 		{/if}
 
-		<!-- Step 3: Test Environment -->
+		<!-- Step 3: Test / Export Environment -->
 		{#if step === 3}
 			<div class="space-y-4">
 				<div class="flex items-center gap-3">
@@ -318,15 +360,25 @@
 						<TestTube class="w-6 h-6 text-yellow-600" />
 					</div>
 					<div>
-						<h2 class="text-xl font-semibold text-gray-900">Test Environment</h2>
-						<p class="text-sm text-gray-500">Configure the development/test environment</p>
+						<h2 class="text-xl font-semibold text-gray-900">
+							{syncMode === 'export_only' ? 'Environment' : 'Test Environment'}
+						</h2>
+						<p class="text-sm text-gray-500">
+							{syncMode === 'export_only'
+								? 'Configure the Elastic space and Git branch for exporting rules'
+								: 'Configure the development/test environment'}
+						</p>
 					</div>
 				</div>
 
 				<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
 					<p class="text-sm text-yellow-800">
-						Rules synced here will be saved to the <strong>{testBranch || 'develop'}</strong> branch.
-						Use this for testing new rules before promoting to production.
+						{#if syncMode === 'export_only'}
+							Rules will be exported from this Elastic space to the <strong>{testBranch || 'develop'}</strong> branch in Git.
+						{:else}
+							Rules synced here will be saved to the <strong>{testBranch || 'develop'}</strong> branch.
+							Use this for testing new rules before promoting to production.
+						{/if}
 					</p>
 				</div>
 
@@ -374,8 +426,8 @@
 			</div>
 		{/if}
 
-		<!-- Step 4: Prod Environment -->
-		{#if step === 4}
+		<!-- Step 4: Prod Environment (full mode only) -->
+		{#if step === 4 && syncMode === 'full'}
 			<div class="space-y-4">
 				<div class="flex items-center gap-3">
 					<div class="p-2 bg-green-100 rounded-lg">

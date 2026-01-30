@@ -1,0 +1,1 @@
+import{w as c,B as s,A as l,E as _}from"./BbuzmxRY.js";import{B as i}from"./cVoOpi3M.js";function f(n,o,r){c&&s();var a=new i(n);l(()=>{var e=o()??null;a.ensure(e,e&&(t=>r(t,e)))},_)}const u=Object.freeze(Object.defineProperty({__proto__:null},Symbol.toStringTag,{value:"Module"}));export{u as _,f as c};

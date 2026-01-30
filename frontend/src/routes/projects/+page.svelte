@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { pb } from '$lib/pocketbase';
-	import { Plus, Play, Settings, Trash2, TestTube, Rocket, GitBranch, Database } from 'lucide-svelte';
+	import { Plus, Play, Settings, Trash2, TestTube, Rocket, GitBranch, Database, Upload } from 'lucide-svelte';
 	import type { ProjectExpanded, Environment } from '$types';
 
 	interface ProjectWithEnvs extends ProjectExpanded {
@@ -131,12 +131,19 @@
 									<p class="text-sm text-gray-500 mt-1 line-clamp-2">{project.description}</p>
 								{/if}
 							</div>
-							<span
-								class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-								{project.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}"
-							>
-								{project.is_active ? 'Active' : 'Inactive'}
-							</span>
+							<div class="flex items-center gap-1.5">
+								{#if (project as any).sync_mode === 'export_only'}
+									<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+										Export Only
+									</span>
+								{/if}
+								<span
+									class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+									{project.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}"
+								>
+									{project.is_active ? 'Active' : 'Inactive'}
+								</span>
+							</div>
 						</div>
 					</div>
 
@@ -166,8 +173,13 @@
 								</div>
 							{/if}
 
-							<!-- Production Environment -->
-							{#if getProdEnv(project)}
+							<!-- Production Environment (not shown for export_only) -->
+							{#if (project as any).sync_mode === 'export_only'}
+								<div class="flex items-center gap-2 text-gray-400">
+									<Upload class="w-4 h-4 text-yellow-500" />
+									<span class="text-xs text-yellow-600">Elastic to Git</span>
+								</div>
+							{:else if getProdEnv(project)}
 								{@const prodEnv = getProdEnv(project)}
 								<div class="flex items-start gap-2">
 									<div class="p-1.5 bg-green-100 rounded">

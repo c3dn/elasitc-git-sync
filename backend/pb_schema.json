@@ -57,7 +57,8 @@
       {"name": "test_rules_count", "type": "number", "required": false, "options": {"min": 0}},
       {"name": "prod_rules_count", "type": "number", "required": false, "options": {"min": 0}},
       {"name": "last_sync_test", "type": "date", "required": false},
-      {"name": "last_sync_prod", "type": "date", "required": false}
+      {"name": "last_sync_prod", "type": "date", "required": false},
+      {"name": "sync_mode", "type": "select", "required": false, "options": {"maxSelect": 1, "values": ["full", "export_only"]}}
     ],
     "listRule": "",
     "viewRule": "",

@@ -46,6 +46,7 @@ export interface Project {
   is_active: boolean;
   sync_enabled: boolean;
   auto_sync_interval?: number;
+  sync_mode?: 'full' | 'export_only';
   created: string;
   updated: string;
 }
@@ -330,6 +331,7 @@ export interface ValidationWarning {
 
 export type SyncDirection = 'elastic_to_git' | 'git_to_elastic' | 'bidirectional';
 export type SyncStatus = 'pending' | 'running' | 'completed' | 'failed' | 'conflict';
+export type SyncMode = 'full' | 'export_only';
 export type ConflictResolution = 'pending' | 'use_elastic' | 'use_git' | 'manual_merge';
 export type EnvironmentName = 'test' | 'staging' | 'production';
 
@@ -364,6 +366,7 @@ export interface ProjectForm {
   is_active: boolean;
   sync_enabled: boolean;
   auto_sync_interval?: number;
+  sync_mode?: 'full' | 'export_only';
 }
 
 export interface EnvironmentForm {
