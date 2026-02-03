@@ -461,14 +461,14 @@ def _export_via_api(kibana_url: str, api_key: str, space: str) -> tuple[list[dic
 
     try:
         page = 1
-        per_page = 100
+        per_page = 10000
         total = 0
 
-        with httpx.Client(timeout=30, verify=False) as client:
+        with httpx.Client(timeout=60, verify=False) as client:
             while True:
                 resp = client.get(
                     rules_url,
-                    params={"per_page": per_page, "page": page},
+                    params={"per_page": per_page, "page": page, "sort_field": "name", "sort_order": "asc"},
                     headers=headers,
                 )
                 resp.raise_for_status()
@@ -487,10 +487,10 @@ def _export_via_api(kibana_url: str, api_key: str, space: str) -> tuple[list[dic
     # Fetch exception lists and their items
     try:
         exceptions_url = f"{base_url}/api/exception_lists/_find"
-        with httpx.Client(timeout=30, verify=False) as client:
+        with httpx.Client(timeout=60, verify=False) as client:
             resp = client.get(
                 exceptions_url,
-                params={"per_page": 100, "page": 1},
+                params={"per_page": 10000, "page": 1},
                 headers=headers,
             )
             if resp.status_code == 200:
@@ -511,7 +511,7 @@ def _export_via_api(kibana_url: str, api_key: str, space: str) -> tuple[list[dic
                             params={
                                 "list_id": list_id,
                                 "namespace_type": namespace,
-                                "per_page": 100,
+                                "per_page": 10000,
                                 "page": 1,
                             },
                             headers=headers,
