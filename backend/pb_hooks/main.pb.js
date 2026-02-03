@@ -315,12 +315,12 @@ routerAdd("POST", "/api/rules/list", function(e) {
     // Fetch all rules with pagination
     var allRules = [];
     var currentPage = 1;
-    var perPage = 100;
+    var perPage = 10000;
     var totalRules = 0;
     var fetchError = false;
 
     do {
-      var rulesApiUrl = rulesBaseUrl + "?per_page=" + perPage + "&page=" + currentPage;
+      var rulesApiUrl = rulesBaseUrl + "?per_page=" + perPage + "&page=" + currentPage + "&sort_field=name&sort_order=asc";
       var resp = $http.send({
         url: rulesApiUrl,
         method: "GET",
@@ -329,18 +329,20 @@ routerAdd("POST", "/api/rules/list", function(e) {
           "kbn-xsrf": "true",
           "Content-Type": "application/json"
         },
-        timeout: 30
+        timeout: 60
       });
 
       if (resp.statusCode === 200) {
         var responseData = JSON.parse(resp.raw);
         var pageRules = responseData.data || [];
         totalRules = responseData.total || 0;
+        console.log("[Rules List] Page " + currentPage + ": got " + pageRules.length + " rules, total=" + totalRules + ", accumulated=" + (allRules.length + pageRules.length));
         for (var pi = 0; pi < pageRules.length; pi++) {
           allRules.push(pageRules[pi]);
         }
         currentPage++;
       } else {
+        console.log("[Rules List] Fetch error on page " + currentPage + ": status=" + resp.statusCode);
         fetchError = true;
         break;
       }
@@ -795,11 +797,11 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
       try {
         var elasticRulesForDelete = [];
         var delPage = 1;
-        var delPerPage = 100;
+        var delPerPage = 10000;
         var delTotal = 0;
 
         do {
-          var findApiUrl = findBaseUrl + "?per_page=" + delPerPage + "&page=" + delPage;
+          var findApiUrl = findBaseUrl + "?per_page=" + delPerPage + "&page=" + delPage + "&sort_field=name&sort_order=asc";
           var findResp = $http.send({
             url: findApiUrl,
             method: "GET",
@@ -807,18 +809,20 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
               "Authorization": "ApiKey " + apiKey,
               "kbn-xsrf": "true"
             },
-            timeout: 30
+            timeout: 60
           });
 
           if (findResp.statusCode === 200) {
             var findData = JSON.parse(findResp.raw);
             var delPageData = findData.data || [];
             delTotal = findData.total || 0;
+            console.log("[Delete Check] Page " + delPage + ": got " + delPageData.length + " rules, total=" + delTotal);
             for (var dp = 0; dp < delPageData.length; dp++) {
               elasticRulesForDelete.push(delPageData[dp]);
             }
             delPage++;
           } else {
+            console.log("[Delete Check] Fetch error on page " + delPage + ": status=" + findResp.statusCode);
             break;
           }
         } while (elasticRulesForDelete.length < delTotal);
