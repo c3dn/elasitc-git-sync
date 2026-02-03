@@ -240,22 +240,43 @@ routerAdd("POST", "/api/rules/list", function(e) {
     var apiKey = elastic.get("api_key");
     var elasticSpace = spaceOverride || project.get("elastic_space");
 
-    var rulesApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find?per_page=100";
+    var rulesBaseUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find";
 
-    var resp = $http.send({
-      url: rulesApiUrl,
-      method: "GET",
-      headers: {
-        "Authorization": "ApiKey " + apiKey,
-        "kbn-xsrf": "true",
-        "Content-Type": "application/json"
-      },
-      timeout: 30
-    });
+    // Fetch all rules with pagination
+    var allRules = [];
+    var currentPage = 1;
+    var perPage = 100;
+    var totalRules = 0;
+    var fetchError = false;
 
-    if (resp.statusCode === 200) {
-      var responseData = JSON.parse(resp.raw);
-      var allRules = responseData.data || [];
+    do {
+      var rulesApiUrl = rulesBaseUrl + "?per_page=" + perPage + "&page=" + currentPage;
+      var resp = $http.send({
+        url: rulesApiUrl,
+        method: "GET",
+        headers: {
+          "Authorization": "ApiKey " + apiKey,
+          "kbn-xsrf": "true",
+          "Content-Type": "application/json"
+        },
+        timeout: 30
+      });
+
+      if (resp.statusCode === 200) {
+        var responseData = JSON.parse(resp.raw);
+        var pageRules = responseData.data || [];
+        totalRules = responseData.total || 0;
+        for (var pi = 0; pi < pageRules.length; pi++) {
+          allRules.push(pageRules[pi]);
+        }
+        currentPage++;
+      } else {
+        fetchError = true;
+        break;
+      }
+    } while (allRules.length < totalRules);
+
+    if (!fetchError && allRules.length > 0) {
       var rulesSummary = [];
 
       for (var i = 0; i < allRules.length; i++) {
@@ -275,12 +296,12 @@ routerAdd("POST", "/api/rules/list", function(e) {
       return e.json(200, {
         success: true,
         rules: rulesSummary,
-        total: responseData.total || allRules.length
+        total: totalRules || allRules.length
       });
     } else {
       return e.json(200, {
         success: false,
-        message: "Elastic API returned status " + resp.statusCode,
+        message: fetchError ? "Elastic API returned an error" : "No rules found",
         rules: [],
         total: 0
       });
@@ -345,33 +366,46 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
     // Export: Elastic -> Git
     if (direction === "elastic_to_git" || direction === "bidirectional") {
-      // Fetch rules from Elastic
+      // Fetch all rules from Elastic with pagination
       var elasticRules = [];
-      var elasticApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find?per_page=100";
+      var elasticBaseUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find";
+      var exportPage = 1;
+      var exportPerPage = 100;
+      var exportTotal = 0;
 
-      console.log("Fetching rules from: " + elasticApiUrl);
+      console.log("Fetching rules from: " + elasticBaseUrl);
 
       try {
-        var elasticResp = $http.send({
-          url: elasticApiUrl,
-          method: "GET",
-          headers: {
-            "Authorization": "ApiKey " + apiKey,
-            "kbn-xsrf": "true",
-            "Content-Type": "application/json"
-          },
-          timeout: 30
-        });
+        do {
+          var elasticApiUrl = elasticBaseUrl + "?per_page=" + exportPerPage + "&page=" + exportPage;
+          var elasticResp = $http.send({
+            url: elasticApiUrl,
+            method: "GET",
+            headers: {
+              "Authorization": "ApiKey " + apiKey,
+              "kbn-xsrf": "true",
+              "Content-Type": "application/json"
+            },
+            timeout: 30
+          });
 
-        console.log("Elastic API response status: " + elasticResp.statusCode);
+          console.log("Elastic API response status (page " + exportPage + "): " + elasticResp.statusCode);
 
-        if (elasticResp.statusCode === 200) {
-          var elasticData = JSON.parse(elasticResp.raw);
-          elasticRules = elasticData.data || [];
-          console.log("Found " + elasticRules.length + " rules in Elastic");
-        } else {
-          console.log("Elastic API error: " + elasticResp.raw);
-        }
+          if (elasticResp.statusCode === 200) {
+            var elasticData = JSON.parse(elasticResp.raw);
+            var pageData = elasticData.data || [];
+            exportTotal = elasticData.total || 0;
+            for (var ep = 0; ep < pageData.length; ep++) {
+              elasticRules.push(pageData[ep]);
+            }
+            exportPage++;
+          } else {
+            console.log("Elastic API error: " + elasticResp.raw);
+            break;
+          }
+        } while (elasticRules.length < exportTotal);
+
+        console.log("Found " + elasticRules.length + " rules in Elastic (total: " + exportTotal + ")");
       } catch (err) {
         console.log("Error fetching Elastic rules: " + String(err));
       }
@@ -447,26 +481,34 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
             console.log("Error checking branch: " + String(err));
           }
 
-          // First, get existing files in Git to detect deletions
+          // First, get existing files in Git to detect deletions (with pagination)
           var existingFiles = [];
           var treePath = gitPath ? encodeURIComponent(gitPath) : "";
-          var treeUrl = glApiBase + "/projects/" + glProjectPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100";
+          var treePageNum = 1;
 
           try {
-            var treeResp = $http.send({
-              url: treeUrl,
-              method: "GET",
-              headers: { "Authorization": "Bearer " + gitToken },
-              timeout: 30
-            });
-            if (treeResp.statusCode === 200) {
-              var files = JSON.parse(treeResp.raw);
-              for (var f = 0; f < files.length; f++) {
-                if (files[f].name.endsWith(".json")) {
-                  existingFiles.push(files[f]);
+            do {
+              var treeUrl = glApiBase + "/projects/" + glProjectPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100&page=" + treePageNum;
+              var treeResp = $http.send({
+                url: treeUrl,
+                method: "GET",
+                headers: { "Authorization": "Bearer " + gitToken },
+                timeout: 30
+              });
+              if (treeResp.statusCode === 200) {
+                var files = JSON.parse(treeResp.raw);
+                for (var f = 0; f < files.length; f++) {
+                  if (files[f].name.endsWith(".json")) {
+                    existingFiles.push(files[f]);
+                  }
                 }
+                // If we got fewer than per_page results, we've reached the last page
+                if (files.length < 100) break;
+                treePageNum++;
+              } else {
+                break;
               }
-            }
+            } while (true);
           } catch (err) {
             console.log("Error getting existing files: " + String(err));
           }
@@ -659,35 +701,42 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
           var glImportApi = glImportMatch[1] + "/api/v4";
           var glProjPath = encodeURIComponent(glImportMatch[2]);
           var treePath = gitPath ? encodeURIComponent(gitPath) : "";
-          var treeUrl = glImportApi + "/projects/" + glProjPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100";
+          var importTreePage = 1;
 
           try {
-            var treeResp = $http.send({
-              url: treeUrl,
-              method: "GET",
-              headers: { "Authorization": "Bearer " + gitToken },
-              timeout: 30
-            });
+            do {
+              var treeUrl = glImportApi + "/projects/" + glProjPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100&page=" + importTreePage;
+              var treeResp = $http.send({
+                url: treeUrl,
+                method: "GET",
+                headers: { "Authorization": "Bearer " + gitToken },
+                timeout: 30
+              });
 
-            if (treeResp.statusCode === 200) {
-              var files = JSON.parse(treeResp.raw);
-              for (var f = 0; f < files.length; f++) {
-                if (files[f].name.endsWith(".json")) {
-                  var fileUrl = glImportApi + "/projects/" + glProjPath + "/repository/files/" + encodeURIComponent(files[f].path) + "/raw?ref=" + gitBranch;
-                  try {
-                    var fileResp = $http.send({
-                      url: fileUrl,
-                      method: "GET",
-                      headers: { "Authorization": "Bearer " + gitToken },
-                      timeout: 15
-                    });
-                    if (fileResp.statusCode === 200) {
-                      gitRules.push({ content: fileResp.raw });
-                    }
-                  } catch (err) {}
+              if (treeResp.statusCode === 200) {
+                var files = JSON.parse(treeResp.raw);
+                for (var f = 0; f < files.length; f++) {
+                  if (files[f].name.endsWith(".json")) {
+                    var fileUrl = glImportApi + "/projects/" + glProjPath + "/repository/files/" + encodeURIComponent(files[f].path) + "/raw?ref=" + gitBranch;
+                    try {
+                      var fileResp = $http.send({
+                        url: fileUrl,
+                        method: "GET",
+                        headers: { "Authorization": "Bearer " + gitToken },
+                        timeout: 15
+                      });
+                      if (fileResp.statusCode === 200) {
+                        gitRules.push({ content: fileResp.raw });
+                      }
+                    } catch (err) {}
+                  }
                 }
+                if (files.length < 100) break;
+                importTreePage++;
+              } else {
+                break;
               }
-            }
+            } while (true);
           } catch (err) {}
         }
       }
@@ -759,22 +808,40 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
       // Delete rules from Elastic that are not in Git
       summary.deleted = summary.deleted || 0;
-      var findApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find?per_page=100";
+      var findBaseUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find";
 
       try {
-        var findResp = $http.send({
-          url: findApiUrl,
-          method: "GET",
-          headers: {
-            "Authorization": "ApiKey " + apiKey,
-            "kbn-xsrf": "true"
-          },
-          timeout: 30
-        });
+        var elasticRulesForDelete = [];
+        var delPage = 1;
+        var delPerPage = 100;
+        var delTotal = 0;
 
-        if (findResp.statusCode === 200) {
-          var findData = JSON.parse(findResp.raw);
-          var elasticRulesForDelete = findData.data || [];
+        do {
+          var findApiUrl = findBaseUrl + "?per_page=" + delPerPage + "&page=" + delPage;
+          var findResp = $http.send({
+            url: findApiUrl,
+            method: "GET",
+            headers: {
+              "Authorization": "ApiKey " + apiKey,
+              "kbn-xsrf": "true"
+            },
+            timeout: 30
+          });
+
+          if (findResp.statusCode === 200) {
+            var findData = JSON.parse(findResp.raw);
+            var delPageData = findData.data || [];
+            delTotal = findData.total || 0;
+            for (var dp = 0; dp < delPageData.length; dp++) {
+              elasticRulesForDelete.push(delPageData[dp]);
+            }
+            delPage++;
+          } else {
+            break;
+          }
+        } while (elasticRulesForDelete.length < delTotal);
+
+        if (elasticRulesForDelete.length > 0) {
           console.log("Elastic has " + elasticRulesForDelete.length + " rules, checking for deletions...");
 
           for (var d = 0; d < elasticRulesForDelete.length; d++) {
@@ -1414,26 +1481,38 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
 
             var summary = { exported: 0 };
 
-            // Fetch rules from Elastic
+            // Fetch all rules from Elastic with pagination
             var elasticRules = [];
-            var elasticApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find?per_page=100";
+            var autoSyncBaseUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find";
+            var autoSyncPage = 1;
+            var autoSyncTotal = 0;
 
             try {
-              var elasticResp = $http.send({
-                url: elasticApiUrl,
-                method: "GET",
-                headers: {
-                  "Authorization": "ApiKey " + apiKey,
-                  "kbn-xsrf": "true",
-                  "Content-Type": "application/json"
-                },
-                timeout: 30
-              });
+              do {
+                var elasticApiUrl = autoSyncBaseUrl + "?per_page=100&page=" + autoSyncPage;
+                var elasticResp = $http.send({
+                  url: elasticApiUrl,
+                  method: "GET",
+                  headers: {
+                    "Authorization": "ApiKey " + apiKey,
+                    "kbn-xsrf": "true",
+                    "Content-Type": "application/json"
+                  },
+                  timeout: 30
+                });
 
-              if (elasticResp.statusCode === 200) {
-                var elasticData = JSON.parse(elasticResp.raw);
-                elasticRules = elasticData.data || [];
-              }
+                if (elasticResp.statusCode === 200) {
+                  var elasticData = JSON.parse(elasticResp.raw);
+                  var autoPageData = elasticData.data || [];
+                  autoSyncTotal = elasticData.total || 0;
+                  for (var ap = 0; ap < autoPageData.length; ap++) {
+                    elasticRules.push(autoPageData[ap]);
+                  }
+                  autoSyncPage++;
+                } else {
+                  break;
+                }
+              } while (elasticRules.length < autoSyncTotal);
             } catch (err) {
               console.log("[Auto-Sync] Error fetching Elastic rules: " + String(err));
             }
