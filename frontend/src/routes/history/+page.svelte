@@ -16,11 +16,11 @@
 	async function loadHistory() {
 		try {
 			loading = true;
-			syncJobs = await pb.collection('sync_jobs').getFullList({
+			const result = await pb.collection('sync_jobs').getList(1, 50, {
 				expand: 'project',
-				sort: '-created',
-				limit: 50
+				sort: '-created'
 			});
+			syncJobs = result.items;
 		} catch (err: any) {
 			error = err.message;
 		} finally {
@@ -34,7 +34,7 @@
 			running: 'bg-blue-100 text-blue-800',
 			failed: 'bg-red-100 text-red-800',
 			conflict: 'bg-yellow-100 text-yellow-800',
-			pending: 'bg-gray-100 text-gray-800'
+			pending: 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
 		};
 		return colors[status] || colors.pending;
 	}
@@ -67,8 +67,8 @@
 <div class="space-y-6">
 	<!-- Header -->
 	<div>
-		<h1 class="text-3xl font-bold text-gray-900">Sync History</h1>
-		<p class="mt-1 text-sm text-gray-500">
+		<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">Sync History</h1>
+		<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 			View all synchronization jobs and their results
 		</p>
 	</div>
@@ -82,43 +82,43 @@
 			<p class="text-sm text-red-800">{error}</p>
 		</div>
 	{:else if syncJobs.length === 0}
-		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-			<p class="text-gray-500">No sync jobs yet. Start a sync to see history here.</p>
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+			<p class="text-gray-500 dark:text-gray-400">No sync jobs yet. Start a sync to see history here.</p>
 		</div>
 	{:else}
-		<div class="bg-white rounded-lg shadow-sm border border-gray-200">
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
 			<div class="overflow-x-auto">
 				<table class="w-full">
-					<thead class="bg-gray-50 border-b border-gray-200">
+					<thead class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
 						<tr>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
 								Status
 							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
 								Project
 							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
 								Direction
 							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
 								Changes
 							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
 								Started
 							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
 								Duration
 							</th>
 						</tr>
 					</thead>
-					<tbody class="bg-white divide-y divide-gray-200">
+					<tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
 						{#each syncJobs as job}
-							<tr class="hover:bg-gray-50 transition-colors">
+							<tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
 								<td class="px-6 py-4 whitespace-nowrap">
 									<div class="flex items-center gap-2">
 										<svelte:component
 											this={getSyncStatusIcon(job.status)}
-											class="w-4 h-4 text-gray-400"
+											class="w-4 h-4 text-gray-400 dark:text-gray-500"
 										/>
 										<span
 											class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {getSyncStatusColor(
@@ -130,15 +130,15 @@
 									</div>
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap">
-									<div class="text-sm font-medium text-gray-900">
+									<div class="text-sm font-medium text-gray-900 dark:text-gray-100">
 										{job.expand?.project?.name || 'Unknown Project'}
 									</div>
-									<div class="text-xs text-gray-500">
+									<div class="text-xs text-gray-500 dark:text-gray-400">
 										{job.type}
 									</div>
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap">
-									<span class="text-sm text-gray-700">
+									<span class="text-sm text-gray-700 dark:text-gray-300">
 										{getDirectionLabel(job.direction)}
 									</span>
 								</td>
@@ -153,32 +153,32 @@
 											{/if}
 										</div>
 									{:else}
-										<span class="text-xs text-gray-400">-</span>
+										<span class="text-xs text-gray-400 dark:text-gray-500">-</span>
 									{/if}
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap">
 									{#if job.started_at}
-										<div class="text-sm text-gray-900">
+										<div class="text-sm text-gray-900 dark:text-gray-100">
 											{format(new Date(job.started_at), 'MMM d, yyyy')}
 										</div>
-										<div class="text-xs text-gray-500">
+										<div class="text-xs text-gray-500 dark:text-gray-400">
 											{format(new Date(job.started_at), 'HH:mm:ss')}
 										</div>
 									{:else}
-										<span class="text-xs text-gray-400">Not started</span>
+										<span class="text-xs text-gray-400 dark:text-gray-500">Not started</span>
 									{/if}
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap">
 									{#if job.started_at && job.completed_at}
 										{@const duration =
 											new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()}
-										<span class="text-sm text-gray-700">
+										<span class="text-sm text-gray-700 dark:text-gray-300">
 											{Math.floor(duration / 1000)}s
 										</span>
 									{:else if job.started_at}
 										<span class="text-sm text-blue-600 animate-pulse">Running...</span>
 									{:else}
-										<span class="text-xs text-gray-400">-</span>
+										<span class="text-xs text-gray-400 dark:text-gray-500">-</span>
 									{/if}
 								</td>
 							</tr>

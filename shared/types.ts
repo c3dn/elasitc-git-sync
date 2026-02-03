@@ -377,3 +377,218 @@ export interface EnvironmentForm {
   requires_approval: boolean;
   auto_deploy: boolean;
 }
+
+// ============================================================================
+// Review & Change Detection Types
+// ============================================================================
+
+export type ChangeType =
+  | 'new_rule'
+  | 'modified_rule'
+  | 'deleted_rule'
+  | 'rule_enabled'
+  | 'rule_disabled'
+  | 'exception_added'
+  | 'exception_removed'
+  | 'exception_modified'
+  | 'severity_changed'
+  | 'tags_changed'
+  | 'query_changed';
+
+export type PendingChangeStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PendingChange {
+  id: string;
+  project: string;
+  environment?: string;
+  detection_batch: string;
+  rule_id: string;
+  rule_name: string;
+  change_type: ChangeType;
+  previous_state?: any;
+  current_state?: any;
+  diff_summary?: string;
+  toml_content?: string;
+  status: PendingChangeStatus;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  reverted?: boolean;
+  created: string;
+  updated: string;
+}
+
+export interface PendingChangeExpanded extends PendingChange {
+  expand?: {
+    project?: Project;
+    environment?: Environment;
+  };
+}
+
+export interface RuleSnapshot {
+  id: string;
+  project: string;
+  environment?: string;
+  rule_id: string;
+  rule_name: string;
+  rule_hash?: string;
+  rule_content: any;
+  toml_content?: string;
+  exceptions?: any;
+  enabled?: boolean;
+  severity?: string;
+  tags?: string[];
+  last_approved_at?: string;
+  created: string;
+  updated: string;
+}
+
+// ============================================================================
+// Notification Types
+// ============================================================================
+
+export type NotificationType =
+  | 'change_detected'
+  | 'review_required'
+  | 'change_approved'
+  | 'change_rejected'
+  | 'revert_failed'
+  | 'sync_error';
+
+export type NotificationSeverity = 'info' | 'warning' | 'error';
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: NotificationType;
+  severity: NotificationSeverity;
+  link?: string;
+  read: boolean;
+  project?: string;
+  created: string;
+  updated: string;
+}
+
+// ============================================================================
+// Webhook Types
+// ============================================================================
+
+export interface WebhookConfig {
+  id: string;
+  name: string;
+  url: string;
+  secret?: string;
+  events: string[];
+  is_active: boolean;
+  last_triggered?: string;
+  last_status?: 'success' | 'failed' | 'unknown';
+  headers?: Record<string, string>;
+  created: string;
+  updated: string;
+}
+
+export interface WebhookConfigForm {
+  name: string;
+  url: string;
+  secret?: string;
+  events: string[];
+  is_active: boolean;
+  headers?: Record<string, string>;
+}
+
+export interface WebhookPayload {
+  event: string;
+  timestamp: string;
+  project: { id: string; name: string };
+  summary: string;
+  changes_count: number;
+  review_url: string;
+  changes: { rule_name: string; change_type: string }[];
+}
+
+// ============================================================================
+// Review API Types
+// ============================================================================
+
+export interface ReviewRequest {
+  change_id: string;
+  reviewed_by?: string;
+}
+
+export interface BulkReviewRequest {
+  batch_id?: string;
+  change_ids?: string[];
+  reviewed_by?: string;
+}
+
+export interface ReviewResponse {
+  success: boolean;
+  message: string;
+  git_commit_sha?: string;
+  revert_result?: { success: boolean; message: string };
+}
+
+// ============================================================================
+// Extended Dashboard Types
+// ============================================================================
+
+export interface RecentChange {
+  id: string;
+  rule_name: string;
+  change_type: ChangeType;
+  diff_summary?: string;
+  status: PendingChangeStatus;
+  project_name: string;
+  created: string;
+}
+
+export interface LastSyncInfo {
+  id: string;
+  status: string;
+  completed_at: string;
+  started_at: string;
+  project_name: string;
+  direction: string;
+  error_message?: string;
+}
+
+export interface ExtendedDashboardStats extends DashboardStats {
+  total_rules?: number;
+  enabled_rules?: number;
+  disabled_rules?: number;
+  tracked_rules?: number;
+  pending_reviews?: number;
+  unread_notifications?: number;
+  recent_changes?: RecentChange[];
+  last_sync?: LastSyncInfo | null;
+}
+
+// ============================================================================
+// Audit Log Types
+// ============================================================================
+
+export type AuditAction =
+  | 'sync_triggered'
+  | 'rule_approved'
+  | 'rule_rejected'
+  | 'bulk_approved'
+  | 'bulk_rejected'
+  | 'mr_created'
+  | 'baseline_initialized'
+  | 'change_detected';
+
+export interface AuditLog {
+  id: string;
+  user: string;
+  action: AuditAction;
+  resource_type: 'rule' | 'project' | 'sync_job' | 'webhook' | 'settings' | 'baseline';
+  resource_id: string;
+  resource_name: string;
+  project?: string;
+  project_name?: string;
+  details?: any;
+  status: 'success' | 'error';
+  error_message?: string;
+  created: string;
+  updated: string;
+}

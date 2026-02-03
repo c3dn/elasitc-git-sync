@@ -33,3 +33,18 @@ if (browser) {
 		}
 	}
 }
+
+// Authenticated fetch wrapper - includes PocketBase auth token in requests
+export function apiFetch(url: string, options?: RequestInit): Promise<Response> {
+	const authHeaders: Record<string, string> = {};
+	if (pb.authStore.token) {
+		authHeaders['Authorization'] = pb.authStore.token;
+	}
+	return fetch(url, {
+		...options,
+		headers: {
+			...authHeaders,
+			...(options?.headers as Record<string, string>)
+		}
+	});
+}

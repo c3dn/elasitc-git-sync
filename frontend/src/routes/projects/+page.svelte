@@ -79,8 +79,8 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between animate-fade-in">
 		<div>
-			<h1 class="text-3xl font-bold text-gray-900">Projects</h1>
-			<p class="mt-1 text-sm text-gray-500">
+			<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">Projects</h1>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				Manage your Elastic Security rule sync projects
 			</p>
 		</div>
@@ -104,10 +104,10 @@
 	{:else if projects.length === 0}
 		<div class="card p-12 text-center animate-fade-in">
 			<div class="mb-4">
-				<Database class="w-12 h-12 text-gray-400 mx-auto" />
+				<Database class="w-12 h-12 text-gray-400 dark:text-gray-500 mx-auto" />
 			</div>
-			<h3 class="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-			<p class="text-gray-500 mb-6">Create your first project to start syncing Elastic Security rules with Git.</p>
+			<h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No projects yet</h3>
+			<p class="text-gray-500 dark:text-gray-400 mb-6">Create your first project to start syncing Elastic Security rules with Git.</p>
 			<a
 				href="/projects/new"
 				class="btn inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all"
@@ -121,14 +121,14 @@
 			{#each projects as project, index}
 				<div class="card overflow-hidden animate-fade-in" style="animation-delay: {index * 50}ms; opacity: 0;">
 					<!-- Header -->
-					<div class="p-6 border-b border-gray-100">
+					<div class="p-6 border-b border-gray-100 dark:border-gray-800">
 						<div class="flex items-start justify-between">
 							<div class="flex-1">
-								<a href="/projects/{project.id}" class="text-lg font-semibold text-gray-900 hover:text-blue-600">
+								<a href="/projects/{project.id}" class="text-lg font-semibold text-gray-900 dark:text-gray-100 hover:text-blue-600">
 									{project.name}
 								</a>
 								{#if project.description}
-									<p class="text-sm text-gray-500 mt-1 line-clamp-2">{project.description}</p>
+									<p class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{project.description}</p>
 								{/if}
 							</div>
 							<div class="flex items-center gap-1.5">
@@ -139,7 +139,7 @@
 								{/if}
 								<span
 									class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-									{project.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}"
+									{project.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'}"
 								>
 									{project.is_active ? 'Active' : 'Inactive'}
 								</span>
@@ -148,7 +148,7 @@
 					</div>
 
 					<!-- Environments -->
-					<div class="px-6 py-4 bg-gray-50">
+					<div class="px-6 py-4 bg-gray-50 dark:bg-gray-800">
 						<div class="grid grid-cols-2 gap-4">
 							<!-- Test Environment -->
 							{#if getTestEnv(project)}
@@ -158,16 +158,16 @@
 										<TestTube class="w-4 h-4 text-yellow-600" />
 									</div>
 									<div class="min-w-0">
-										<div class="text-xs font-medium text-gray-700">Test</div>
-										<div class="text-xs text-gray-500 truncate">{testEnv?.elastic_space}</div>
-										<div class="text-xs text-gray-400 flex items-center gap-1">
+										<div class="text-xs font-medium text-gray-700 dark:text-gray-300">Test</div>
+										<div class="text-xs text-gray-500 dark:text-gray-400 truncate">{testEnv?.elastic_space}</div>
+										<div class="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
 											<GitBranch class="w-3 h-3" />
 											{testEnv?.git_branch}
 										</div>
 									</div>
 								</div>
 							{:else}
-								<div class="flex items-center gap-2 text-gray-400">
+								<div class="flex items-center gap-2 text-gray-400 dark:text-gray-500">
 									<TestTube class="w-4 h-4" />
 									<span class="text-xs">No test env</span>
 								</div>
@@ -175,7 +175,7 @@
 
 							<!-- Production Environment (not shown for export_only) -->
 							{#if (project as any).sync_mode === 'export_only'}
-								<div class="flex items-center gap-2 text-gray-400">
+								<div class="flex items-center gap-2 text-gray-400 dark:text-gray-500">
 									<Upload class="w-4 h-4 text-yellow-500" />
 									<span class="text-xs text-yellow-600">Elastic to Git</span>
 								</div>
@@ -186,16 +186,16 @@
 										<Rocket class="w-4 h-4 text-green-600" />
 									</div>
 									<div class="min-w-0">
-										<div class="text-xs font-medium text-gray-700">Production</div>
-										<div class="text-xs text-gray-500 truncate">{prodEnv?.elastic_space}</div>
-										<div class="text-xs text-gray-400 flex items-center gap-1">
+										<div class="text-xs font-medium text-gray-700 dark:text-gray-300">Production</div>
+										<div class="text-xs text-gray-500 dark:text-gray-400 truncate">{prodEnv?.elastic_space}</div>
+										<div class="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
 											<GitBranch class="w-3 h-3" />
 											{prodEnv?.git_branch}
 										</div>
 									</div>
 								</div>
 							{:else}
-								<div class="flex items-center gap-2 text-gray-400">
+								<div class="flex items-center gap-2 text-gray-400 dark:text-gray-500">
 									<Rocket class="w-4 h-4" />
 									<span class="text-xs">No prod env</span>
 								</div>
@@ -204,7 +204,7 @@
 					</div>
 
 					<!-- Connection Info -->
-					<div class="px-6 py-3 text-xs text-gray-500 border-t border-gray-100">
+					<div class="px-6 py-3 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-800">
 						<div class="flex items-center justify-between">
 							<span>
 								<strong>Elastic:</strong> {project.expand?.elastic_instance?.name || 'Unknown'}
@@ -216,7 +216,7 @@
 					</div>
 
 					<!-- Actions -->
-					<div class="flex items-center gap-2 p-4 border-t border-gray-200 bg-white">
+					<div class="flex items-center gap-2 p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
 						<a
 							href="/projects/{project.id}"
 							class="btn flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all text-sm"

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { pb } from '$lib/pocketbase';
+	import { pb, apiFetch } from '$lib/pocketbase';
 	import { Plus, CheckCircle, XCircle, Loader, Trash2, RefreshCw, Pencil } from 'lucide-svelte';
 	import type { GitRepository } from '$types';
 
@@ -24,7 +24,7 @@
 	onMount(async () => {
 		await loadRepositories();
 		try {
-			const res = await fetch(`${pb.baseUrl}/api/settings/ssl-status`);
+			const res = await apiFetch(`${pb.baseUrl}/api/settings/ssl-status`);
 			const data = await res.json();
 			sslVerificationDisabled = data.ssl_verification_disabled;
 		} catch (err) {}
@@ -83,7 +83,7 @@
 			testingConnection = true;
 			error = '';
 
-			const response = await fetch(`${pb.baseUrl}/api/connection/test`, {
+			const response = await apiFetch(`${pb.baseUrl}/api/connection/test`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -149,7 +149,7 @@
 
 	async function retestConnection(repo: GitRepository) {
 		try {
-			const response = await fetch(`${pb.baseUrl}/api/connection/test`, {
+			const response = await apiFetch(`${pb.baseUrl}/api/connection/test`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -197,8 +197,8 @@
 	{/if}
 
 	{#if showForm}
-		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-			<h3 class="text-lg font-semibold text-gray-900 mb-4">
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+			<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
 				{editingId ? 'Edit Git Repository' : 'Add Git Repository'}
 			</h3>
 
@@ -210,7 +210,7 @@
 
 			<div class="space-y-4">
 				<div>
-					<label for="name" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Repository Name *
 					</label>
 					<input
@@ -218,18 +218,18 @@
 						type="text"
 						bind:value={name}
 						placeholder="Security Rules Repository"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
 					/>
 				</div>
 
 				<div>
-					<label for="provider" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="provider" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Provider *
 					</label>
 					<select
 						id="provider"
 						bind:value={provider}
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent appearance-auto"
 					>
 						<option value="gitlab">GitLab</option>
 						<option value="github">GitHub</option>
@@ -238,7 +238,7 @@
 				</div>
 
 				<div>
-					<label for="url" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Repository URL *
 					</label>
 					<input
@@ -246,15 +246,15 @@
 						type="url"
 						bind:value={url}
 						placeholder="https://gitlab.com/your-org/security-rules"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
 					/>
-					<p class="text-xs text-gray-500 mt-1">
+					<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
 						Full HTTPS URL to your Git repository
 					</p>
 				</div>
 
 				<div>
-					<label for="token" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="token" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Access Token {editingId ? '(leave empty to keep current)' : '*'}
 					</label>
 					<input
@@ -262,9 +262,9 @@
 						type="password"
 						bind:value={accessToken}
 						placeholder={editingId ? '••••••••' : 'Your Git access token'}
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
 					/>
-					<p class="text-xs text-gray-500 mt-1">
+					<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
 						{#if provider === 'gitlab'}
 							Create a project access token with API and write_repository scopes
 						{:else if provider === 'github'}
@@ -276,7 +276,7 @@
 				</div>
 
 				<div>
-					<label for="branch" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="branch" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Default Branch *
 					</label>
 					<input
@@ -284,12 +284,12 @@
 						type="text"
 						bind:value={defaultBranch}
 						placeholder="main"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
 					/>
 				</div>
 
 				<div>
-					<label for="base-path" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="base-path" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Base Path (optional)
 					</label>
 					<input
@@ -297,9 +297,9 @@
 						type="text"
 						bind:value={basePath}
 						placeholder="rules/"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
 					/>
-					<p class="text-xs text-gray-500 mt-1">
+					<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
 						Default subdirectory for storing rules
 					</p>
 				</div>
@@ -309,9 +309,9 @@
 						id="is-active"
 						type="checkbox"
 						bind:checked={isActive}
-						class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-600"
+						class="w-4 h-4 text-primary-600 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-600"
 					/>
-					<label for="is-active" class="text-sm font-medium text-gray-700">
+					<label for="is-active" class="text-sm font-medium text-gray-700 dark:text-gray-300">
 						Active
 					</label>
 				</div>
@@ -320,7 +320,7 @@
 					<button
 						on:click={testConnection}
 						disabled={!url || !accessToken || testingConnection}
-						class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+						class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 					>
 						{#if testingConnection}
 							<Loader class="w-4 h-4 animate-spin" />
@@ -342,7 +342,7 @@
 					</button>
 					<button
 						on:click={closeForm}
-						class="px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors"
+						class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
 					>
 						Cancel
 					</button>
@@ -356,30 +356,30 @@
 			<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
 		</div>
 	{:else if repositories.length === 0 && !showForm}
-		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-			<p class="text-gray-500">No Git repositories configured yet.</p>
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+			<p class="text-gray-500 dark:text-gray-400">No Git repositories configured yet.</p>
 		</div>
 	{:else}
 		<div class="space-y-4">
 			{#each repositories as repo}
-				<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+				<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
 					<div class="flex items-start justify-between">
 						<div class="flex-1">
 							<div class="flex items-center gap-3 mb-2">
-								<h3 class="text-lg font-semibold text-gray-900">{repo.name}</h3>
+								<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{repo.name}</h3>
 								{#if repo.connection_status === 'success'}
 									<CheckCircle class="w-5 h-5 text-green-600" />
 								{:else if repo.connection_status === 'failed'}
 									<XCircle class="w-5 h-5 text-red-600" />
 								{/if}
 								<span
-									class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+									class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
 								>
 									{repo.provider}
 								</span>
 							</div>
-							<p class="text-sm text-gray-600 mb-1">{repo.url}</p>
-							<p class="text-xs text-gray-500">
+							<p class="text-sm text-gray-600 dark:text-gray-400 mb-1">{repo.url}</p>
+							<p class="text-xs text-gray-500 dark:text-gray-400">
 								Branch: {repo.default_branch}
 								{#if repo.base_path}
 									 &bull; Path: {repo.base_path}
@@ -389,24 +389,24 @@
 						<div class="flex items-center gap-2">
 							<span
 								class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-								{repo.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}"
+								{repo.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'}"
 							>
 								{repo.is_active ? 'Active' : 'Inactive'}
 							</span>
 						</div>
 					</div>
 
-					<div class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-200">
+					<div class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
 						<button
 							on:click={() => retestConnection(repo)}
-							class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+							class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm"
 						>
 							<RefreshCw class="w-4 h-4" />
 							Test Connection
 						</button>
 						<button
 							on:click={() => openEditForm(repo)}
-							class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+							class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm"
 						>
 							<Pencil class="w-4 h-4" />
 							Edit

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { pb } from '$lib/pocketbase';
+	import { pb, apiFetch } from '$lib/pocketbase';
 	import { AlertTriangle, CheckCircle } from 'lucide-svelte';
 	import type { Conflict } from '$types';
 
@@ -42,7 +42,7 @@
 		if (!selectedConflict) return;
 
 		try {
-			const response = await fetch(`${pb.baseUrl}/api/conflict/resolve`, {
+			const response = await apiFetch(`${pb.baseUrl}/api/conflict/resolve`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({

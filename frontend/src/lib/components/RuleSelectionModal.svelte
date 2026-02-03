@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { pb } from '$lib/pocketbase';
+	import { pb, apiFetch } from '$lib/pocketbase';
 	import {
 		X,
 		Search,
@@ -57,7 +57,7 @@
 		searchQuery = '';
 		severityFilter = 'all';
 		try {
-			const response = await fetch(`${pb.baseUrl}/api/rules/list`, {
+			const response = await apiFetch(`${pb.baseUrl}/api/rules/list`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -137,36 +137,36 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
-			class="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col"
+			class="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col"
 			onclick={(e) => e.stopPropagation()}
 		>
 			<!-- Header -->
-			<div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
 				<div>
-					<h2 class="text-xl font-semibold text-gray-900">Select Rules to Export</h2>
-					<p class="text-sm text-gray-500 mt-1">
-						Export to branch: <code class="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{branch}</code>
+					<h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Select Rules to Export</h2>
+					<p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+						Export to branch: <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">{branch}</code>
 					</p>
 				</div>
-				<button onclick={onclose} class="text-gray-400 hover:text-gray-600 transition-colors">
+				<button onclick={onclose} class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
 					<X class="w-5 h-5" />
 				</button>
 			</div>
 
 			<!-- Toolbar -->
-			<div class="px-6 py-3 border-b border-gray-100 flex items-center gap-3 flex-shrink-0 flex-wrap">
+			<div class="px-6 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3 flex-shrink-0 flex-wrap">
 				<div class="relative flex-1 min-w-[200px]">
-					<Search class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+					<Search class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
 					<input
 						type="text"
 						placeholder="Search rules..."
 						bind:value={searchQuery}
-						class="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+						class="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
 					/>
 				</div>
 				<select
 					bind:value={severityFilter}
-					class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+					class="text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-500"
 				>
 					<option value="all">All Severities</option>
 					<option value="critical">Critical</option>
@@ -176,7 +176,7 @@
 				</select>
 				<button
 					onclick={toggleAll}
-					class="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+					class="inline-flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
 				>
 					{#if allFilteredSelected}
 						<CheckSquare class="w-4 h-4" />
@@ -193,7 +193,7 @@
 				{#if loadingRules}
 					<div class="flex items-center justify-center py-12">
 						<Loader class="w-6 h-6 animate-spin text-yellow-600" />
-						<span class="ml-2 text-sm text-gray-500">Loading rules from Elastic...</span>
+						<span class="ml-2 text-sm text-gray-500 dark:text-gray-400">Loading rules from Elastic...</span>
 					</div>
 				{:else if loadError}
 					<div class="flex items-center gap-3 py-8 justify-center">
@@ -201,7 +201,7 @@
 						<span class="text-sm text-red-600">{loadError}</span>
 					</div>
 				{:else if filteredRules.length === 0}
-					<div class="text-center py-8 text-sm text-gray-500">
+					<div class="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
 						{#if searchQuery || severityFilter !== 'all'}
 							No rules match your filter.
 						{:else}
@@ -211,22 +211,22 @@
 				{:else}
 					{#each filteredRules as rule}
 						<label
-							class="flex items-center gap-3 py-2.5 px-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border-b border-gray-50 last:border-0"
+							class="flex items-center gap-3 py-2.5 px-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors border-b border-gray-50 dark:border-gray-800 last:border-0"
 						>
 							<input
 								type="checkbox"
 								checked={selected.has(rule.rule_id)}
 								onchange={() => toggleRule(rule.rule_id)}
-								class="w-4 h-4 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+								class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-yellow-600 focus:ring-yellow-500"
 							/>
 							<div class="flex-1 min-w-0">
-								<div class="font-medium text-sm text-gray-900 truncate">{rule.name}</div>
-								<div class="text-xs text-gray-400 truncate">{rule.rule_id}</div>
+								<div class="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{rule.name}</div>
+								<div class="text-xs text-gray-400 dark:text-gray-500 truncate">{rule.rule_id}</div>
 							</div>
 							<span class="text-xs px-2 py-0.5 rounded font-medium flex-shrink-0 {getSeverityColor(rule.severity)}">
 								{rule.severity}
 							</span>
-							<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded flex-shrink-0">
+							<span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded flex-shrink-0">
 								{rule.type}
 							</span>
 							{#if rule.enabled}
@@ -240,14 +240,14 @@
 			</div>
 
 			<!-- Footer -->
-			<div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50">
-				<span class="text-sm text-gray-500">
+			<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0 bg-gray-50 dark:bg-gray-800">
+				<span class="text-sm text-gray-500 dark:text-gray-400">
 					{selectedCount} of {rules.length} rules selected
 				</span>
 				<div class="flex items-center gap-3">
 					<button
 						onclick={onclose}
-						class="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+						class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
 						Cancel
 					</button>

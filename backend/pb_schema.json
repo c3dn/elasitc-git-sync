@@ -171,5 +171,107 @@
     "createRule": "",
     "updateRule": "",
     "deleteRule": ""
+  },
+  {
+    "name": "pending_changes",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "project", "type": "relation", "required": true, "options": {"collectionId": "projects", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "environment", "type": "relation", "required": false, "options": {"collectionId": "environments", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "detection_batch", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "rule_id", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "rule_name", "type": "text", "required": true, "options": {"min": 1, "max": 500}},
+      {"name": "change_type", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["new_rule", "modified_rule", "deleted_rule", "rule_enabled", "rule_disabled", "exception_added", "exception_removed", "exception_modified", "severity_changed", "tags_changed", "query_changed"]}},
+      {"name": "previous_state", "type": "json", "required": false},
+      {"name": "current_state", "type": "json", "required": false},
+      {"name": "diff_summary", "type": "text", "required": false, "options": {"max": 2000}},
+      {"name": "toml_content", "type": "text", "required": false, "options": {"max": 50000}},
+      {"name": "status", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["pending", "approved", "rejected"]}},
+      {"name": "reviewed_by", "type": "text", "required": false, "options": {"max": 255}},
+      {"name": "reviewed_at", "type": "date", "required": false},
+      {"name": "reverted", "type": "bool", "required": false}
+    ],
+    "indexes": [
+      "CREATE INDEX idx_pending_status ON pending_changes (status)",
+      "CREATE INDEX idx_pending_batch ON pending_changes (detection_batch)",
+      "CREATE INDEX idx_pending_project ON pending_changes (project)"
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "rule_snapshots",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "project", "type": "relation", "required": true, "options": {"collectionId": "projects", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "environment", "type": "relation", "required": false, "options": {"collectionId": "environments", "cascadeDelete": true, "maxSelect": 1}},
+      {"name": "rule_id", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "rule_name", "type": "text", "required": true, "options": {"min": 1, "max": 500}},
+      {"name": "rule_hash", "type": "text", "required": false, "options": {"max": 64}},
+      {"name": "rule_content", "type": "json", "required": true},
+      {"name": "toml_content", "type": "text", "required": false, "options": {"max": 50000}},
+      {"name": "exceptions", "type": "json", "required": false},
+      {"name": "enabled", "type": "bool", "required": false},
+      {"name": "severity", "type": "text", "required": false, "options": {"max": 50}},
+      {"name": "tags", "type": "json", "required": false},
+      {"name": "last_approved_at", "type": "date", "required": false}
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX idx_snapshot_rule ON rule_snapshots (project, environment, rule_id)",
+      "CREATE INDEX idx_snapshot_project ON rule_snapshots (project)"
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "notifications",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "title", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "message", "type": "text", "required": true, "options": {"min": 1, "max": 2000}},
+      {"name": "type", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["change_detected", "review_required", "change_approved", "change_rejected", "revert_failed", "sync_error"]}},
+      {"name": "severity", "type": "select", "required": true, "options": {"maxSelect": 1, "values": ["info", "warning", "error"]}},
+      {"name": "link", "type": "text", "required": false, "options": {"max": 500}},
+      {"name": "read", "type": "bool", "required": true},
+      {"name": "project", "type": "relation", "required": false, "options": {"collectionId": "projects", "cascadeDelete": true, "maxSelect": 1}}
+    ],
+    "indexes": [
+      "CREATE INDEX idx_notification_read ON notifications (read)",
+      "CREATE INDEX idx_notification_created ON notifications (created)"
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
+  },
+  {
+    "name": "webhook_configs",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {"name": "name", "type": "text", "required": true, "options": {"min": 1, "max": 255}},
+      {"name": "url", "type": "url", "required": true},
+      {"name": "secret", "type": "text", "required": false, "options": {"max": 500}},
+      {"name": "events", "type": "json", "required": true},
+      {"name": "is_active", "type": "bool", "required": true},
+      {"name": "last_triggered", "type": "date", "required": false},
+      {"name": "last_status", "type": "select", "required": false, "options": {"maxSelect": 1, "values": ["success", "failed", "unknown"]}},
+      {"name": "headers", "type": "json", "required": false}
+    ],
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": ""
   }
 ]

@@ -221,12 +221,12 @@
 <div class="max-w-3xl mx-auto space-y-6">
 	<!-- Header -->
 	<div>
-		<a href="/projects/{projectId}" class="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-4">
+		<a href="/projects/{projectId}" class="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4">
 			<ArrowLeft class="w-4 h-4" />
 			Back to Project
 		</a>
-		<h1 class="text-3xl font-bold text-gray-900">Edit Project</h1>
-		<p class="mt-1 text-sm text-gray-500">
+		<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">Edit Project</h1>
+		<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 			Update project settings and environment configuration
 		</p>
 	</div>
@@ -249,40 +249,40 @@
 		</div>
 	{:else}
 		<!-- Project Details -->
-		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-			<h2 class="text-lg font-semibold text-gray-900 mb-4">Project Details</h2>
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Project Details</h2>
 			<div class="space-y-4">
 				<div>
-					<label for="name" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Project Name *
 					</label>
 					<input
 						id="name"
 						type="text"
 						bind:value={name}
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 					/>
 				</div>
 				<div>
-					<label for="description" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Description
 					</label>
 					<textarea
 						id="description"
 						bind:value={description}
 						rows="2"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 					></textarea>
 				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div>
-						<label for="elastic" class="block text-sm font-medium text-gray-700 mb-2">
+						<label for="elastic" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							Elastic Instance *
 						</label>
 						<select
 							id="elastic"
 							bind:value={elasticInstanceId}
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 						>
 							{#each elasticInstances as instance}
 								<option value={instance.id}>{instance.name}</option>
@@ -290,13 +290,13 @@
 						</select>
 					</div>
 					<div>
-						<label for="git" class="block text-sm font-medium text-gray-700 mb-2">
+						<label for="git" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							Git Repository *
 						</label>
 						<select
 							id="git"
 							bind:value={gitRepositoryId}
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 						>
 							{#each gitRepositories as repo}
 								<option value={repo.id}>{repo.name}</option>
@@ -305,7 +305,7 @@
 					</div>
 				</div>
 				<div>
-					<label for="path" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="path" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Base Path in Repository
 					</label>
 					<input
@@ -313,7 +313,7 @@
 						type="text"
 						bind:value={gitPath}
 						placeholder="detection-rules/"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 					/>
 				</div>
 				<div class="flex items-center gap-2">
@@ -321,36 +321,37 @@
 						id="active"
 						type="checkbox"
 						bind:checked={isActive}
-						class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-600"
+						class="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-600"
 					/>
-					<label for="active" class="text-sm font-medium text-gray-700">
+					<label for="active" class="text-sm font-medium text-gray-700 dark:text-gray-300">
 						Project is active
 					</label>
 				</div>
 
 				<!-- Sync Mode -->
 				<div>
-					<label class="block text-sm font-medium text-gray-700 mb-2">
+					<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Sync Mode
 					</label>
+
 					<div class="grid grid-cols-2 gap-3">
 						<button
 							type="button"
 							on:click={() => syncMode = 'full'}
 							class="flex flex-col items-start p-3 border-2 rounded-lg transition-colors text-left
-								{syncMode === 'full' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}"
+								{syncMode === 'full' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
 						>
-							<span class="text-sm font-semibold text-gray-900">Full Workflow</span>
-							<span class="text-xs text-gray-500 mt-1">Export, merge requests, and import to production</span>
+							<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Full Workflow</span>
+							<span class="text-xs text-gray-500 dark:text-gray-400 mt-1">Export, merge requests, and import to production</span>
 						</button>
 						<button
 							type="button"
 							on:click={() => syncMode = 'export_only'}
 							class="flex flex-col items-start p-3 border-2 rounded-lg transition-colors text-left
-								{syncMode === 'export_only' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}"
+								{syncMode === 'export_only' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
 						>
-							<span class="text-sm font-semibold text-gray-900">Export Only</span>
-							<span class="text-xs text-gray-500 mt-1">Only export rules from Elastic to Git</span>
+							<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Export Only</span>
+							<span class="text-xs text-gray-500 dark:text-gray-400 mt-1">Only export rules from Elastic to Git</span>
 						</button>
 					</div>
 				</div>
@@ -358,14 +359,14 @@
 		</div>
 
 		<!-- Auto-Sync Settings -->
-		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
 			<div class="flex items-center gap-3 mb-4">
 				<div class="p-2 bg-blue-100 rounded-lg">
 					<Clock class="w-5 h-5 text-blue-600" />
 				</div>
 				<div>
-					<h2 class="text-lg font-semibold text-gray-900">Automatic Sync</h2>
-					<p class="text-sm text-gray-500">Schedule automatic rule exports to Git</p>
+					<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Automatic Sync</h2>
+					<p class="text-sm text-gray-500 dark:text-gray-400">Schedule automatic rule exports to Git</p>
 				</div>
 			</div>
 			<div class="space-y-4">
@@ -374,22 +375,22 @@
 						id="sync-enabled"
 						type="checkbox"
 						bind:checked={syncEnabled}
-						class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-600"
+						class="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-600"
 					/>
-					<label for="sync-enabled" class="text-sm font-medium text-gray-700">
+					<label for="sync-enabled" class="text-sm font-medium text-gray-700 dark:text-gray-300">
 						Enable automatic sync
 					</label>
 				</div>
 
 				{#if syncEnabled}
 					<div>
-						<label for="sync-interval" class="block text-sm font-medium text-gray-700 mb-2">
+						<label for="sync-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							Sync Interval
 						</label>
 						<select
 							id="sync-interval"
 							bind:value={autoSyncInterval}
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 						>
 							<option value={5}>Every 5 minutes</option>
 							<option value={15}>Every 15 minutes</option>
@@ -413,17 +414,17 @@
 		</div>
 
 		<!-- Test Environment -->
-		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
 			<div class="flex items-center justify-between mb-4">
 				<div class="flex items-center gap-3">
 					<div class="p-2 bg-yellow-100 rounded-lg">
 						<TestTube class="w-5 h-5 text-yellow-600" />
 					</div>
 					<div>
-						<h2 class="text-lg font-semibold text-gray-900">
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
 							{syncMode === 'export_only' ? 'Environment' : 'Test Environment'}
 						</h2>
-						<p class="text-sm text-gray-500">
+						<p class="text-sm text-gray-500 dark:text-gray-400">
 							{syncMode === 'export_only' ? 'Elastic space and Git branch for export' : 'Development and testing configuration'}
 						</p>
 					</div>
@@ -439,14 +440,14 @@
 			</div>
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<label for="test-space" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="test-space" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Elastic Space
 					</label>
 					{#if availableSpaces.length > 0}
 						<select
 							id="test-space"
 							bind:value={testSpace}
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 						>
 							<option value="">Select space...</option>
 							{#each availableSpaces as space}
@@ -459,12 +460,12 @@
 							type="text"
 							bind:value={testSpace}
 							placeholder="test"
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 						/>
 					{/if}
 				</div>
 				<div>
-					<label for="test-branch" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="test-branch" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Git Branch
 					</label>
 					<input
@@ -472,7 +473,7 @@
 						type="text"
 						bind:value={testBranch}
 						placeholder="develop"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 					/>
 				</div>
 			</div>
@@ -480,15 +481,15 @@
 
 		<!-- Production Environment (full mode only) -->
 		{#if syncMode === 'full'}
-		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
 			<div class="flex items-center justify-between mb-4">
 				<div class="flex items-center gap-3">
 					<div class="p-2 bg-green-100 rounded-lg">
 						<Rocket class="w-5 h-5 text-green-600" />
 					</div>
 					<div>
-						<h2 class="text-lg font-semibold text-gray-900">Production Environment</h2>
-						<p class="text-sm text-gray-500">Production configuration (requires MR)</p>
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Production Environment</h2>
+						<p class="text-sm text-gray-500 dark:text-gray-400">Production configuration (requires MR)</p>
 					</div>
 				</div>
 				{#if environments.find(e => e.name === 'production')}
@@ -502,14 +503,14 @@
 			</div>
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<label for="prod-space" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="prod-space" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Elastic Space
 					</label>
 					{#if availableSpaces.length > 0}
 						<select
 							id="prod-space"
 							bind:value={prodSpace}
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 						>
 							<option value="">Select space...</option>
 							{#each availableSpaces as space}
@@ -522,12 +523,12 @@
 							type="text"
 							bind:value={prodSpace}
 							placeholder="default"
-							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 						/>
 					{/if}
 				</div>
 				<div>
-					<label for="prod-branch" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="prod-branch" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Git Branch
 					</label>
 					<input
@@ -535,7 +536,7 @@
 						type="text"
 						bind:value={prodBranch}
 						placeholder="main"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
 					/>
 				</div>
 			</div>
@@ -558,7 +559,7 @@
 			</button>
 			<a
 				href="/projects/{projectId}"
-				class="px-6 py-3 text-gray-700 hover:text-gray-900 transition-colors"
+				class="px-6 py-3 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
 			>
 				Cancel
 			</a>

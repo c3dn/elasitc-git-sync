@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { pb } from '$lib/pocketbase';
+	import { pb, apiFetch } from '$lib/pocketbase';
 	import {
 		ArrowLeft,
 		Pencil,
@@ -22,7 +22,10 @@
 		GitBranch,
 		Upload,
 		Download,
-		ChevronRight
+		ChevronRight,
+		Database,
+		FolderGit2,
+		FolderCode
 	} from 'lucide-svelte';
 	import type { ProjectExpanded, SyncJob } from '$types';
 	import RuleSelectionModal from '$lib/components/RuleSelectionModal.svelte';
@@ -100,11 +103,11 @@
 
 	async function loadSyncJobs() {
 		try {
-			syncJobs = await pb.collection('sync_jobs').getFullList({
+			const result = await pb.collection('sync_jobs').getList(1, 10, {
 				filter: `project = "${projectId}"`,
-				sort: '-created',
-				perPage: 10
+				sort: '-created'
 			});
+			syncJobs = result.items;
 		} catch (err: any) {
 			console.error('Failed to load sync jobs:', err);
 		}
@@ -112,7 +115,7 @@
 
 	async function loadMetrics() {
 		try {
-			const response = await fetch(`${pb.baseUrl}/api/project/${projectId}/metrics`);
+			const response = await apiFetch(`${pb.baseUrl}/api/project/${projectId}/metrics`);
 			if (response.ok) {
 				const data = await response.json();
 				testRuleCount = data.test_rules || 0;
@@ -148,7 +151,7 @@
 				body.rule_ids = ruleIds;
 			}
 
-			const response = await fetch(`${pb.baseUrl}/api/sync/trigger`, {
+			const response = await apiFetch(`${pb.baseUrl}/api/sync/trigger`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(body)
@@ -178,7 +181,7 @@
 			error = '';
 			successMessage = '';
 
-			const response = await fetch(`${pb.baseUrl}/api/merge-request/create`, {
+			const response = await apiFetch(`${pb.baseUrl}/api/merge-request/create`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -217,7 +220,7 @@
 			error = '';
 			successMessage = '';
 
-			const response = await fetch(`${pb.baseUrl}/api/sync/trigger`, {
+			const response = await apiFetch(`${pb.baseUrl}/api/sync/trigger`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -264,7 +267,7 @@
 			case 'completed': return 'text-green-600';
 			case 'failed': return 'text-red-600';
 			case 'running': return 'text-blue-600';
-			default: return 'text-gray-600';
+			default: return 'text-gray-600 dark:text-gray-400';
 		}
 	}
 
@@ -273,7 +276,7 @@
 			case 'completed': return 'bg-green-100';
 			case 'failed': return 'bg-red-100';
 			case 'running': return 'bg-blue-100';
-			default: return 'bg-gray-100';
+			default: return 'bg-gray-100 dark:bg-gray-800';
 		}
 	}
 
@@ -304,16 +307,21 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between animate-fade-in">
 		<div>
-			<a href="/projects" class="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-2 transition-colors duration-200">
+			<a href="/projects" class="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2 transition-colors duration-200">
 				<ArrowLeft class="w-4 h-4 transition-transform duration-200 hover:-translate-x-1" />
 				Back to Projects
 			</a>
 			{#if loading}
-				<h1 class="text-3xl font-bold text-gray-900">Loading...</h1>
+				<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">Loading...</h1>
 			{:else if project}
-				<h1 class="text-3xl font-bold text-gray-900">{project.name}</h1>
+				<div class="flex items-center gap-3">
+					<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">{project.name}</h1>
+					<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {isExportOnly ? 'bg-yellow-100 text-yellow-700' : 'bg-primary-100 text-primary-700'}">
+						{isExportOnly ? 'Export Only' : 'Full Workflow'}
+					</span>
+				</div>
 				{#if project.description}
-					<p class="mt-1 text-sm text-gray-500">{project.description}</p>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{project.description}</p>
 				{/if}
 			{/if}
 		</div>
@@ -321,14 +329,14 @@
 			<div class="flex items-center gap-2">
 				<a
 					href="/projects/{projectId}/edit"
-					class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+					class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
 				>
 					<Pencil class="w-4 h-4" />
 					Edit
 				</a>
 				<button
 					on:click={deleteProject}
-					class="inline-flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors"
+					class="inline-flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
 				>
 					<Trash2 class="w-4 h-4" />
 				</button>
@@ -337,14 +345,14 @@
 	</div>
 
 	{#if error}
-		<div class="alert bg-red-50 border border-red-200 rounded-lg p-4">
-			<p class="text-sm text-red-800">{error}</p>
+		<div class="alert bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+			<p class="text-sm text-red-800 dark:text-red-200">{error}</p>
 		</div>
 	{/if}
 
 	{#if successMessage}
-		<div class="alert bg-green-50 border border-green-200 rounded-lg p-4">
-			<p class="text-sm text-green-800">{successMessage}</p>
+		<div class="alert bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+			<p class="text-sm text-green-800 dark:text-green-200">{successMessage}</p>
 		</div>
 	{/if}
 
@@ -353,35 +361,93 @@
 			<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
 		</div>
 	{:else if project}
+		<!-- Project Info Strip -->
+		<div class="card animate-fade-in" style="animation-delay: 50ms; opacity: 0;">
+			<div class="flex items-center gap-4 px-6 py-3 flex-wrap">
+				{#if project.expand?.elastic_instance}
+					{@const kibanaUrl = project.expand.elastic_instance.url}
+					<a
+						href="{kibanaUrl}/app/security/rules"
+						target="_blank"
+						class="inline-flex items-center gap-2 px-3 py-1.5 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-lg text-sm hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors"
+					>
+						<Database class="w-3.5 h-3.5" />
+						<span class="font-medium">{project.expand.elastic_instance.name}</span>
+						<ExternalLink class="w-3 h-3 opacity-50" />
+					</a>
+				{/if}
+
+				{#if project.expand?.git_repository}
+					{@const gitUrl = stripGitSuffix(project.expand.git_repository.url)}
+					<a
+						href="{gitUrl}"
+						target="_blank"
+						class="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 rounded-lg text-sm hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+					>
+						<FolderGit2 class="w-3.5 h-3.5" />
+						<span class="font-medium">{project.expand.git_repository.name}</span>
+						<ExternalLink class="w-3 h-3 opacity-50" />
+					</a>
+
+					<a
+						href="{gitUrl}/-/merge_requests"
+						target="_blank"
+						class="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-lg text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+					>
+						<GitMerge class="w-3.5 h-3.5" />
+						<span class="font-medium">Merge Requests</span>
+						<ExternalLink class="w-3 h-3 opacity-50" />
+					</a>
+				{/if}
+
+				<div class="hidden sm:block w-px h-5 bg-gray-200 dark:bg-gray-700"></div>
+
+				<div class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+					<FolderCode class="w-3.5 h-3.5" />
+					<span class="font-mono">{project.git_path || '/'}</span>
+				</div>
+
+				{#if syncJobs.length > 0}
+					<div class="hidden sm:block w-px h-5 bg-gray-200 dark:bg-gray-700"></div>
+					<div class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+						<Clock class="w-3.5 h-3.5" />
+						Last sync {formatRelativeTime(syncJobs[0].created)}
+					</div>
+				{/if}
+			</div>
+		</div>
+
 		<!-- Workflow Section -->
 		<div class="card p-6 animate-fade-in" style="animation-delay: 100ms; opacity: 0;">
-			<h2 class="text-lg font-semibold text-gray-900 mb-6">Sync Workflow</h2>
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">Sync Workflow</h2>
 
 			{#if isExportOnly}
 				<!-- Export Only Workflow -->
 				<div class="max-w-md">
-					<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-						<div class="flex items-center gap-2 mb-3">
-							<div class="p-2 bg-yellow-100 rounded-lg">
-								<TestTube class="w-5 h-5 text-yellow-600" />
+					<div class="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800/50 rounded-xl p-5">
+						<div class="flex items-center gap-3 mb-4">
+							<div class="p-2.5 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+								<Upload class="w-5 h-5 text-yellow-600" />
 							</div>
 							<div>
-								<h3 class="font-semibold text-gray-900">Export to Git</h3>
+								<h3 class="font-semibold text-gray-900 dark:text-gray-100">Export to Git</h3>
 								{#if testEnv}
-									<p class="text-xs text-gray-500">{testEnv.elastic_space}</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400">{testEnv.elastic_space} → {testEnv.git_branch}</p>
 								{/if}
 							</div>
 						</div>
 
 						{#if testEnv}
-							<div class="space-y-3">
-								<div class="flex items-center justify-between text-sm">
-									<span class="text-gray-600">Rules:</span>
-									<span class="font-semibold text-gray-900">{testRuleCount}</span>
-								</div>
-								<div class="flex items-center justify-between text-sm">
-									<span class="text-gray-600">Branch:</span>
-									<span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{testEnv.git_branch}</span>
+							<div class="space-y-4">
+								<div class="flex items-center gap-4 text-sm">
+									<div class="flex items-center gap-2">
+										<span class="text-gray-500 dark:text-gray-400">Rules:</span>
+										<span class="font-semibold text-gray-900 dark:text-gray-100">{testRuleCount}</span>
+									</div>
+									<div class="flex items-center gap-2">
+										<span class="text-gray-500 dark:text-gray-400">Branch:</span>
+										<span class="font-mono text-xs bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{testEnv.git_branch}</span>
+									</div>
 								</div>
 
 								<button
@@ -399,223 +465,206 @@
 								</button>
 							</div>
 						{:else}
-							<p class="text-sm text-yellow-700">No environment configured</p>
+							<p class="text-sm text-yellow-700 dark:text-yellow-400">No environment configured</p>
 						{/if}
 					</div>
 				</div>
-
-				<!-- Workflow Explanation -->
-				<div class="mt-6 pt-4 border-t border-gray-200">
-					<h4 class="text-sm font-medium text-gray-700 mb-2">How it works:</h4>
-					<ol class="text-sm text-gray-600 space-y-1">
-						<li class="flex items-start gap-2">
-							<span class="flex-shrink-0 w-5 h-5 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center text-xs font-medium">1</span>
-							<span>Export rules from <strong>{testEnv?.elastic_space || 'Elastic'}</strong> to <code class="text-xs bg-gray-100 px-1 rounded">{testEnv?.git_branch || 'main'}</code> branch in Git</span>
-						</li>
-					</ol>
-					<p class="text-xs text-gray-500 mt-2">This project is configured for one-way export only (Elastic to Git).</p>
-				</div>
 			{:else}
-				<!-- Full Workflow -->
-				<div class="flex items-stretch gap-4">
+				<!-- Full Workflow - Pipeline Steps -->
+				<div class="flex items-start gap-3">
 					<!-- Step 1: Test Environment -->
-					<div class="flex-1 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-2 mb-3">
-							<div class="p-2 bg-yellow-100 rounded-lg">
-								<TestTube class="w-5 h-5 text-yellow-600" />
-							</div>
-							<div>
-								<h3 class="font-semibold text-gray-900">Test Environment</h3>
-								{#if testEnv}
-									<p class="text-xs text-gray-500">{testEnv.elastic_space}</p>
-								{/if}
-							</div>
+							<span class="flex-shrink-0 w-6 h-6 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-full flex items-center justify-center text-xs font-bold">1</span>
+							<div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
 						</div>
-
-						{#if testEnv}
-							<div class="space-y-3">
-								<div class="flex items-center justify-between text-sm">
-									<span class="text-gray-600">Rules:</span>
-									<span class="font-semibold text-gray-900">{testRuleCount}</span>
+						<div class="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800/50 rounded-xl p-4">
+							<div class="flex items-center gap-2 mb-3">
+								<div class="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+									<TestTube class="w-4 h-4 text-yellow-600" />
 								</div>
-								<div class="flex items-center justify-between text-sm">
-									<span class="text-gray-600">Branch:</span>
-									<span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{testEnv.git_branch}</span>
-								</div>
-
-								<button
-									on:click={openRuleSelection}
-									disabled={syncingTest}
-									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
-								>
-									{#if syncingTest}
-										<Loader class="w-4 h-4 animate-spin" />
-										Syncing...
-									{:else}
-										<Upload class="w-4 h-4" />
-										Export to Git
+								<div class="min-w-0">
+									<h3 class="font-semibold text-sm text-gray-900 dark:text-gray-100">Export to Git</h3>
+									{#if testEnv}
+										<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{testEnv.elastic_space}</p>
 									{/if}
-								</button>
+								</div>
 							</div>
-						{:else}
-							<p class="text-sm text-yellow-700">No test environment configured</p>
-						{/if}
+
+							{#if testEnv}
+								<div class="space-y-3">
+									<div class="flex items-center justify-between text-sm">
+										<span class="text-gray-500 dark:text-gray-400">Rules</span>
+										<span class="font-semibold text-gray-900 dark:text-gray-100">{testRuleCount}</span>
+									</div>
+									<div class="flex items-center justify-between text-sm">
+										<span class="text-gray-500 dark:text-gray-400">Branch</span>
+										<span class="font-mono text-xs bg-white dark:bg-gray-800 border border-yellow-200 dark:border-yellow-800/50 px-2 py-0.5 rounded">{testEnv.git_branch}</span>
+									</div>
+
+									<button
+										on:click={openRuleSelection}
+										disabled={syncingTest}
+										class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
+									>
+										{#if syncingTest}
+											<Loader class="w-4 h-4 animate-spin" />
+											Syncing...
+										{:else}
+											<Upload class="w-4 h-4" />
+											Export
+										{/if}
+									</button>
+								</div>
+							{:else}
+								<p class="text-sm text-yellow-700 dark:text-yellow-400">Not configured</p>
+							{/if}
+						</div>
 					</div>
 
 					<!-- Arrow 1 -->
-					<div class="flex items-center">
-						<ChevronRight class="w-8 h-8 text-gray-300" />
+					<div class="flex items-center pt-10 flex-shrink-0">
+						<ChevronRight class="w-6 h-6 text-gray-300 dark:text-gray-600" />
 					</div>
 
 					<!-- Step 2: Create MR -->
-					<div class="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-4">
+					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-2 mb-3">
-							<div class="p-2 bg-blue-100 rounded-lg">
-								<GitMerge class="w-5 h-5 text-blue-600" />
-							</div>
-							<div>
-								<h3 class="font-semibold text-gray-900">Merge Request</h3>
-								<p class="text-xs text-gray-500">Review & Approve</p>
-							</div>
+							<span class="flex-shrink-0 w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full flex items-center justify-center text-xs font-bold">2</span>
+							<div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
 						</div>
-
-						{#if testEnv && prodEnv}
-							<div class="space-y-3">
-								<div class="text-sm text-gray-600">
-									<div class="flex items-center gap-2 mb-1">
-										<GitBranch class="w-4 h-4" />
-										<span class="font-mono text-xs">{testEnv.git_branch}</span>
-									</div>
-									<div class="flex items-center justify-center">
-										<ArrowDown class="w-4 h-4 text-gray-400" />
-									</div>
-									<div class="flex items-center gap-2 mt-1">
-										<GitBranch class="w-4 h-4" />
-										<span class="font-mono text-xs">{prodEnv.git_branch}</span>
-									</div>
+						<div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 rounded-xl p-4">
+							<div class="flex items-center gap-2 mb-3">
+								<div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+									<GitMerge class="w-4 h-4 text-blue-600" />
 								</div>
-
-								<button
-									on:click={createMergeRequest}
-									disabled={creatingMR}
-									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
-								>
-									{#if creatingMR}
-										<Loader class="w-4 h-4 animate-spin" />
-										Creating...
-									{:else}
-										<GitMerge class="w-4 h-4" />
-										Create MR
-									{/if}
-								</button>
-
-								{#if project.expand?.git_repository}
-									<a
-										href="{stripGitSuffix(project.expand.git_repository.url)}/-/merge_requests"
-										target="_blank"
-										class="block text-center text-xs text-blue-600 hover:underline"
-									>
-										View open MRs <ExternalLink class="w-3 h-3 inline" />
-									</a>
-								{/if}
+								<div class="min-w-0">
+									<h3 class="font-semibold text-sm text-gray-900 dark:text-gray-100">Merge Request</h3>
+									<p class="text-xs text-gray-500 dark:text-gray-400">Review & Approve</p>
+								</div>
 							</div>
-						{:else}
-							<p class="text-sm text-blue-700">Configure both environments</p>
-						{/if}
+
+							{#if testEnv && prodEnv}
+								<div class="space-y-3">
+									<div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+										<GitBranch class="w-3.5 h-3.5 flex-shrink-0" />
+										<span class="font-mono text-xs truncate">{testEnv.git_branch}</span>
+										<ArrowRight class="w-3.5 h-3.5 flex-shrink-0 text-gray-400 dark:text-gray-500" />
+										<span class="font-mono text-xs truncate">{prodEnv.git_branch}</span>
+									</div>
+
+									<button
+										on:click={createMergeRequest}
+										disabled={creatingMR}
+										class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
+									>
+										{#if creatingMR}
+											<Loader class="w-4 h-4 animate-spin" />
+											Creating...
+										{:else}
+											<GitMerge class="w-4 h-4" />
+											Create MR
+										{/if}
+									</button>
+
+									{#if project.expand?.git_repository}
+										<a
+											href="{stripGitSuffix(project.expand.git_repository.url)}/-/merge_requests"
+											target="_blank"
+											class="block text-center text-xs text-blue-600 dark:text-blue-400 hover:underline"
+										>
+											View open MRs <ExternalLink class="w-3 h-3 inline" />
+										</a>
+									{/if}
+								</div>
+							{:else}
+								<p class="text-sm text-blue-700 dark:text-blue-400">Configure both environments</p>
+							{/if}
+						</div>
 					</div>
 
 					<!-- Arrow 2 -->
-					<div class="flex items-center">
-						<ChevronRight class="w-8 h-8 text-gray-300" />
+					<div class="flex items-center pt-10 flex-shrink-0">
+						<ChevronRight class="w-6 h-6 text-gray-300 dark:text-gray-600" />
 					</div>
 
 					<!-- Step 3: Production Environment -->
-					<div class="flex-1 bg-green-50 border border-green-200 rounded-lg p-4">
+					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-2 mb-3">
-							<div class="p-2 bg-green-100 rounded-lg">
-								<Rocket class="w-5 h-5 text-green-600" />
-							</div>
-							<div>
-								<h3 class="font-semibold text-gray-900">Production</h3>
-								{#if prodEnv}
-									<p class="text-xs text-gray-500">{prodEnv.elastic_space}</p>
-								{/if}
-							</div>
+							<span class="flex-shrink-0 w-6 h-6 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full flex items-center justify-center text-xs font-bold">3</span>
+							<div class="flex-1 h-px bg-transparent"></div>
 						</div>
-
-						{#if prodEnv}
-							<div class="space-y-3">
-								<div class="flex items-center justify-between text-sm">
-									<span class="text-gray-600">Rules:</span>
-									<span class="font-semibold text-gray-900">{prodRuleCount}</span>
+						<div class="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 rounded-xl p-4">
+							<div class="flex items-center gap-2 mb-3">
+								<div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+									<Rocket class="w-4 h-4 text-green-600" />
 								</div>
-								<div class="flex items-center justify-between text-sm">
-									<span class="text-gray-600">Branch:</span>
-									<span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{prodEnv.git_branch}</span>
-								</div>
-
-								<button
-									on:click={syncGitToProd}
-									disabled={syncingProd}
-									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
-								>
-									{#if syncingProd}
-										<Loader class="w-4 h-4 animate-spin" />
-										Syncing...
-									{:else}
-										<Download class="w-4 h-4" />
-										Import from Git
+								<div class="min-w-0">
+									<h3 class="font-semibold text-sm text-gray-900 dark:text-gray-100">Production</h3>
+									{#if prodEnv}
+										<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{prodEnv.elastic_space}</p>
 									{/if}
-								</button>
+								</div>
 							</div>
-						{:else}
-							<p class="text-sm text-green-700">No prod environment configured</p>
-						{/if}
-					</div>
-				</div>
 
-				<!-- Workflow Explanation -->
-				<div class="mt-6 pt-4 border-t border-gray-200">
-					<h4 class="text-sm font-medium text-gray-700 mb-2">How it works:</h4>
-					<ol class="text-sm text-gray-600 space-y-1">
-						<li class="flex items-start gap-2">
-							<span class="flex-shrink-0 w-5 h-5 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center text-xs font-medium">1</span>
-							<span>Export rules from <strong>{testEnv?.elastic_space || 'Test'}</strong> to <code class="text-xs bg-gray-100 px-1 rounded">{testEnv?.git_branch || 'develop'}</code> branch</span>
-						</li>
-						<li class="flex items-start gap-2">
-							<span class="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-medium">2</span>
-							<span>Create MR from <code class="text-xs bg-gray-100 px-1 rounded">{testEnv?.git_branch || 'develop'}</code> to <code class="text-xs bg-gray-100 px-1 rounded">{prodEnv?.git_branch || 'main'}</code>, review and merge</span>
-						</li>
-						<li class="flex items-start gap-2">
-							<span class="flex-shrink-0 w-5 h-5 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-medium">3</span>
-							<span>Import rules from <code class="text-xs bg-gray-100 px-1 rounded">{prodEnv?.git_branch || 'main'}</code> branch to <strong>{prodEnv?.elastic_space || 'Production'}</strong></span>
-						</li>
-					</ol>
+							{#if prodEnv}
+								<div class="space-y-3">
+									<div class="flex items-center justify-between text-sm">
+										<span class="text-gray-500 dark:text-gray-400">Rules</span>
+										<span class="font-semibold text-gray-900 dark:text-gray-100">{prodRuleCount}</span>
+									</div>
+									<div class="flex items-center justify-between text-sm">
+										<span class="text-gray-500 dark:text-gray-400">Branch</span>
+										<span class="font-mono text-xs bg-white dark:bg-gray-800 border border-green-200 dark:border-green-800/50 px-2 py-0.5 rounded">{prodEnv.git_branch}</span>
+									</div>
+
+									<button
+										on:click={syncGitToProd}
+										disabled={syncingProd}
+										class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
+									>
+										{#if syncingProd}
+											<Loader class="w-4 h-4 animate-spin" />
+											Syncing...
+										{:else}
+											<Download class="w-4 h-4" />
+											Import
+										{/if}
+									</button>
+								</div>
+							{:else}
+								<p class="text-sm text-green-700 dark:text-green-400">Not configured</p>
+							{/if}
+						</div>
+					</div>
 				</div>
 			{/if}
 		</div>
 
-		<!-- Quick Links & Info -->
-		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-			<!-- Recent Sync Jobs -->
-			<div class="lg:col-span-2 card p-6 animate-fade-in" style="animation-delay: 200ms; opacity: 0;">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-lg font-semibold text-gray-900">Recent Syncs</h3>
-					<button
-						on:click={loadSyncJobs}
-						class="text-gray-500 hover:text-gray-700"
-					>
-						<RefreshCw class="w-4 h-4" />
-					</button>
-				</div>
+		<!-- Recent Syncs - Full Width -->
+		<div class="card animate-fade-in" style="animation-delay: 200ms; opacity: 0;">
+			<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Syncs</h2>
+				<button
+					on:click={loadSyncJobs}
+					class="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+				>
+					<RefreshCw class="w-4 h-4" />
+				</button>
+			</div>
 
-				{#if syncJobs.length === 0}
-					<p class="text-sm text-gray-500">No sync jobs yet. Start by exporting from Test.</p>
-				{:else}
-					<div class="space-y-2">
-						{#each syncJobs.slice(0, 5) as job}
-							<div class="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
-								<div class="flex items-center gap-3">
+			{#if syncJobs.length === 0}
+				<div class="px-6 py-10 text-center">
+					<RefreshCw class="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+					<p class="text-sm text-gray-500 dark:text-gray-400">No sync jobs yet.</p>
+					<p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Start by exporting rules from your environment.</p>
+				</div>
+			{:else}
+				<div class="divide-y divide-gray-100 dark:divide-gray-800">
+					{#each syncJobs.slice(0, 8) as job}
+						<div class="flex items-center justify-between px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+							<div class="flex items-center gap-3 min-w-0">
+								<div class="p-1.5 rounded-lg {getStatusBg(job.status)}">
 									{#if job.status === 'completed'}
 										<CheckCircle class="w-4 h-4 text-green-600" />
 									{:else if job.status === 'failed'}
@@ -625,8 +674,10 @@
 									{:else}
 										<Clock class="w-4 h-4 text-yellow-600" />
 									{/if}
-									<div>
-										<span class="text-sm font-medium text-gray-900">
+								</div>
+								<div class="min-w-0">
+									<div class="flex items-center gap-2">
+										<span class="text-sm font-medium text-gray-900 dark:text-gray-100">
 											{#if job.direction === 'elastic_to_git'}
 												Export to Git
 											{:else if job.direction === 'git_to_elastic'}
@@ -635,90 +686,35 @@
 												Bidirectional
 											{/if}
 										</span>
-										{#if job.changes_summary}
-											{@const summary = typeof job.changes_summary === 'string' ? JSON.parse(job.changes_summary) : job.changes_summary}
-											<span class="text-xs text-gray-500 ml-2">
-												{summary.exported || 0} exported
-												{#if summary.deleted}, {summary.deleted} deleted{/if}
-												{#if summary.imported}, {summary.imported} imported{/if}
-											</span>
-										{/if}
+										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {getStatusBg(job.status)} {getStatusColor(job.status)}">
+											{job.status}
+										</span>
 									</div>
-								</div>
-								<div class="text-right">
-									<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {getStatusBg(job.status)} {getStatusColor(job.status)}">
-										{job.status}
-									</span>
-									<p class="text-xs text-gray-500 mt-1">{formatRelativeTime(job.created)}</p>
+									{#if job.changes_summary}
+										{@const summary = typeof job.changes_summary === 'string' ? JSON.parse(job.changes_summary) : job.changes_summary}
+										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+											{summary.exported || 0} exported
+											{#if summary.deleted}, {summary.deleted} deleted{/if}
+											{#if summary.imported}, {summary.imported} imported{/if}
+										</p>
+									{/if}
 								</div>
 							</div>
-						{/each}
+							<div class="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 ml-4">
+								{formatRelativeTime(job.created)}
+							</div>
+						</div>
+					{/each}
+				</div>
+
+				{#if syncJobs.length > 8}
+					<div class="px-6 py-3 border-t border-gray-100 dark:border-gray-800">
+						<a href="/history" class="text-xs font-medium text-primary-600 hover:text-primary-700">
+							View all sync history →
+						</a>
 					</div>
 				{/if}
-			</div>
-
-			<!-- Quick Links -->
-			<div class="card p-6 animate-fade-in" style="animation-delay: 250ms; opacity: 0;">
-				<h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Links</h3>
-				<div class="space-y-3">
-					{#if project.expand?.elastic_instance}
-						{@const kibanaUrl = project.expand.elastic_instance.url}
-						<a
-							href="{kibanaUrl}/app/security/rules"
-							target="_blank"
-							class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-						>
-							<div class="p-2 bg-orange-100 rounded">
-								<FileCode class="w-4 h-4 text-orange-600" />
-							</div>
-							<div class="flex-1 min-w-0">
-								<div class="text-sm font-medium text-gray-900">Kibana Rules</div>
-								<div class="text-xs text-gray-500 truncate">{project.expand.elastic_instance.name}</div>
-							</div>
-							<ExternalLink class="w-4 h-4 text-gray-400" />
-						</a>
-					{/if}
-
-					{#if project.expand?.git_repository}
-						{@const gitUrl = stripGitSuffix(project.expand.git_repository.url)}
-						<a
-							href="{gitUrl}"
-							target="_blank"
-							class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-						>
-							<div class="p-2 bg-purple-100 rounded">
-								<GitBranch class="w-4 h-4 text-purple-600" />
-							</div>
-							<div class="flex-1 min-w-0">
-								<div class="text-sm font-medium text-gray-900">Git Repository</div>
-								<div class="text-xs text-gray-500 truncate">{project.expand.git_repository.name}</div>
-							</div>
-							<ExternalLink class="w-4 h-4 text-gray-400" />
-						</a>
-
-						<a
-							href="{gitUrl}/-/merge_requests"
-							target="_blank"
-							class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-						>
-							<div class="p-2 bg-blue-100 rounded">
-								<GitMerge class="w-4 h-4 text-blue-600" />
-							</div>
-							<div class="flex-1 min-w-0">
-								<div class="text-sm font-medium text-gray-900">Merge Requests</div>
-								<div class="text-xs text-gray-500">View open MRs</div>
-							</div>
-							<ExternalLink class="w-4 h-4 text-gray-400" />
-						</a>
-					{/if}
-				</div>
-
-				<!-- Connection Info -->
-				<div class="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500 space-y-1">
-					<div><strong>Path:</strong> {project.git_path || '/'}</div>
-					<div><strong>Created:</strong> {new Date(project.created).toLocaleDateString()}</div>
-				</div>
-			</div>
+			{/if}
 		</div>
 	{/if}
 </div>
