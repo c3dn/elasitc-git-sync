@@ -475,8 +475,44 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
   // Resolve authenticated user email for audit logging
   var resolvedUser = "system";
-  try { var _a = e.requestInfo().auth; if (_a) { resolvedUser = _a.getString("email") || _a.get("email") || resolvedUser; } } catch(_x) {}
-  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
+  try {
+    var _ri = e.requestInfo();
+    var _a = _ri.auth;
+    console.log("[Sync-Auth] requestInfo().auth exists: " + !!_a);
+    if (_a) {
+      var _email1 = "";
+      try { _email1 = _a.getString("email"); } catch(_e1) { console.log("[Sync-Auth] getString('email') failed: " + String(_e1)); }
+      var _email2 = "";
+      try { _email2 = _a.get("email"); } catch(_e2) { console.log("[Sync-Auth] get('email') failed: " + String(_e2)); }
+      var _email3 = "";
+      try { _email3 = _a.email; } catch(_e3) {}
+      console.log("[Sync-Auth] getString=" + _email1 + " get=" + _email2 + " direct=" + _email3 + " id=" + (_a.id || "?"));
+      resolvedUser = _email1 || _email2 || _email3 || resolvedUser;
+    }
+  } catch(_x) { console.log("[Sync-Auth] requestInfo().auth error: " + String(_x)); }
+  if (resolvedUser === "system") {
+    try {
+      var _h = e.request.header.get("Authorization");
+      console.log("[Sync-Auth] Authorization header: " + (_h ? _h.substring(0, 20) + "..." : "NONE"));
+      if (_h) {
+        var _token = _h;
+        if (_token.indexOf("Bearer ") === 0) _token = _token.substring(7);
+        var _r = e.app.findAuthRecordByToken(_token, "");
+        if (_r) {
+          var _te1 = "";
+          try { _te1 = _r.getString("email"); } catch(_e) {}
+          var _te2 = "";
+          try { _te2 = _r.get("email"); } catch(_e) {}
+          var _te3 = "";
+          try { _te3 = _r.email; } catch(_e) {}
+          console.log("[Sync-Auth] Token record: getString=" + _te1 + " get=" + _te2 + " direct=" + _te3);
+          resolvedUser = _te1 || _te2 || _te3 || resolvedUser;
+        } else {
+          console.log("[Sync-Auth] findAuthRecordByToken returned null");
+        }
+      }
+    } catch(_x) { console.log("[Sync-Auth] Token resolution error: " + String(_x)); }
+  }
   console.log("[Sync] Resolved user: " + resolvedUser);
 
   try {
