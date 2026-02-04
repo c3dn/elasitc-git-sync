@@ -392,20 +392,14 @@ def _export_via_cli(kibana_url: str, api_key: str, space: str) -> tuple[list[dic
         env = os.environ.copy()
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-        # If SSL verification is disabled, patch the SSL context before
-        # running the detection-rules CLI so urllib3/requests skip cert
-        # validation (the CLI is a subprocess and does not inherit our
-        # httpx verify=False setting).
-        disable_ssl = os.environ.get("DISABLE_SSL_VERIFY", "false").lower() in ("true", "1", "yes")
-        if disable_ssl:
-            ssl_patch = (
-                "import ssl; ssl._create_default_https_context = ssl._create_unverified_context; "
-                "import runpy; runpy.run_module('detection_rules', run_name='__main__')"
-            )
-            # Replace "python3 -m detection_rules <args>" with
-            # "python3 -c '<patch>;runpy...' <args>"
-            cli_args = cmd[3:]  # everything after "python3 -m detection_rules"
-            cmd = ["python3", "-c", ssl_patch] + cli_args
+        # Patch the SSL context so urllib3/requests skip cert validation
+        # (the CLI subprocess does not inherit our httpx verify=False).
+        ssl_patch = (
+            "import ssl; ssl._create_default_https_context = ssl._create_unverified_context; "
+            "import runpy; runpy.run_module('detection_rules', run_name='__main__')"
+        )
+        cli_args = cmd[3:]  # everything after "python3 -m detection_rules"
+        cmd = ["python3", "-c", ssl_patch] + cli_args
 
         result = subprocess.run(
             cmd,
