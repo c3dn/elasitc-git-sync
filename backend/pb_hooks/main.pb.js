@@ -473,6 +473,12 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
   var environmentId = data.environment_id;
   var selectedRuleIds = data.rule_ids; // optional array of rule_id strings for selective export
 
+  // Resolve authenticated user email for audit logging
+  var resolvedUser = "system";
+  try { var _a = e.requestInfo().auth; if (_a) { resolvedUser = _a.getString("email") || _a.get("email") || resolvedUser; } } catch(_x) {}
+  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
+  console.log("[Sync] Resolved user: " + resolvedUser);
+
   try {
     // If no environment specified, resolve the first one for this project
     if (!environmentId) {
@@ -882,7 +888,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
     // Audit log
     logAudit(e.app, {
-      user: "system",
+      user: resolvedUser,
       action: "sync_triggered",
       resource_type: "sync_job",
       resource_id: job.id,
@@ -1042,6 +1048,11 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
   var sourceBranch = data.source_branch;
   var targetBranch = data.target_branch;
   var title = data.title || "Promote rules from " + sourceBranch + " to " + targetBranch;
+
+  // Resolve authenticated user email for audit logging
+  var resolvedUser = "system";
+  try { var _a = e.requestInfo().auth; if (_a) { resolvedUser = _a.getString("email") || _a.get("email") || resolvedUser; } } catch(_x) {}
+  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
 
   try {
     // Get project and git repository
@@ -1218,7 +1229,7 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
 
         // Audit log - GitLab MR
         logAudit(e.app, {
-          user: "system",
+          user: resolvedUser,
           action: "mr_created",
           resource_type: "project",
           resource_id: projectId,
@@ -1388,7 +1399,7 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
 
         // Audit log - GitHub PR
         logAudit(e.app, {
-          user: "system",
+          user: resolvedUser,
           action: "mr_created",
           resource_type: "project",
           resource_id: projectId,
@@ -3115,6 +3126,11 @@ routerAdd("POST", "/api/review/init-baseline", function(e) {
   var data = e.requestInfo().body;
   var projectId = data.project_id;
 
+  // Resolve authenticated user email for audit logging
+  var resolvedUser = "system";
+  try { var _a = e.requestInfo().auth; if (_a) { resolvedUser = _a.getString("email") || _a.get("email") || resolvedUser; } } catch(_x) {}
+  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
+
   try {
     var project = e.app.findRecordById("projects", projectId);
     var elasticId = project.get("elastic_instance");
@@ -3185,7 +3201,7 @@ routerAdd("POST", "/api/review/init-baseline", function(e) {
 
     // Audit log
     logAudit(e.app, {
-      user: "system",
+      user: resolvedUser,
       action: "baseline_initialized",
       resource_type: "baseline",
       resource_id: projectId,
