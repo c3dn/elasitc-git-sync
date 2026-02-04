@@ -37,6 +37,7 @@
 	let kibanaBaseUrls: Record<string, string> = {};
 
 	$: batchFilter = $page.url.searchParams.get('batch') || '';
+	$: projectFilter = $page.url.searchParams.get('project_id') || '';
 
 	$: filteredChanges = changes.filter((c) => {
 		if (searchQuery) {
@@ -69,6 +70,7 @@
 			loading = true;
 			let url = `${pb.baseUrl}/api/review/pending?status=${filterStatus}`;
 			if (batchFilter) url += `&batch_id=${batchFilter}`;
+			if (projectFilter) url += `&project_id=${projectFilter}`;
 			const response = await apiFetch(url);
 			if (!response.ok) throw new Error('Failed to load changes');
 			const data = await response.json();

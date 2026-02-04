@@ -27,8 +27,9 @@
 		FolderGit2,
 		FolderCode
 	} from 'lucide-svelte';
-	import type { ProjectExpanded, SyncJob } from '$types';
+	import type { ProjectExpanded, SyncJob, PendingChange } from '$types';
 	import RuleSelectionModal from '$lib/components/RuleSelectionModal.svelte';
+	import { AlertTriangle, Eye, ShieldOff, Shield, ToggleLeft, ToggleRight, Tag, Search as SearchIcon, Edit3, Plus, Minus } from 'lucide-svelte';
 
 	interface Environment {
 		id: string;
@@ -57,6 +58,10 @@
 	let testRuleCount = $state(0);
 	let prodRuleCount = $state(0);
 
+	// Pending changes
+	let pendingChanges = $state<PendingChange[]>([]);
+	let pendingTotal = $state(0);
+
 	// Derived values
 	let projectId = $derived($page.params.id);
 	let testEnv = $derived(environments.find(e => e.name === 'test'));
@@ -74,7 +79,8 @@
 				loadProject(),
 				loadEnvironments(),
 				loadSyncJobs(),
-				loadMetrics()
+				loadMetrics(),
+				loadPendingChanges()
 			]);
 		} finally {
 			loading = false;
@@ -123,6 +129,55 @@
 			}
 		} catch (err) {
 			console.error('Failed to load metrics:', err);
+		}
+	}
+
+	async function loadPendingChanges() {
+		try {
+			const response = await apiFetch(`${pb.baseUrl}/api/review/pending?project_id=${projectId}&status=pending`);
+			if (response.ok) {
+				const data = await response.json();
+				pendingChanges = data.changes || [];
+				pendingTotal = data.total || pendingChanges.length;
+			}
+		} catch (err) {
+			console.error('Failed to load pending changes:', err);
+		}
+	}
+
+	function getPendingBreakdown(): Record<string, number> {
+		const counts: Record<string, number> = {};
+		for (const c of pendingChanges) {
+			const type = c.change_type || 'modified_rule';
+			counts[type] = (counts[type] || 0) + 1;
+		}
+		return counts;
+	}
+
+	function formatChangeType(type: string): string {
+		const labels: Record<string, string> = {
+			new_rule: 'New',
+			modified_rule: 'Modified',
+			deleted_rule: 'Deleted',
+			rule_enabled: 'Enabled',
+			rule_disabled: 'Disabled',
+			exception_added: 'Exception added',
+			exception_removed: 'Exception removed',
+			exception_modified: 'Exception modified',
+			severity_changed: 'Severity changed',
+			tags_changed: 'Tags changed',
+			query_changed: 'Query changed'
+		};
+		return labels[type] || type.replace(/_/g, ' ');
+	}
+
+	function getChangeTypeColor(type: string): string {
+		switch (type) {
+			case 'new_rule': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+			case 'deleted_rule': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+			case 'rule_enabled': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+			case 'rule_disabled': return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
+			default: return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
 		}
 	}
 
@@ -641,6 +696,63 @@
 			{/if}
 		</div>
 
+		<!-- Pending Review -->
+		{#if pendingTotal > 0}
+			{@const breakdown = getPendingBreakdown()}
+			<div class="card animate-fade-in border-l-4 border-l-amber-400" style="animation-delay: 150ms; opacity: 0;">
+				<div class="flex items-center justify-between px-6 py-4">
+					<div class="flex items-center gap-3">
+						<div class="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+							<AlertTriangle class="w-5 h-5 text-amber-600" />
+						</div>
+						<div>
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+								{pendingTotal} {pendingTotal === 1 ? 'Change' : 'Changes'} Pending Review
+							</h2>
+							<div class="flex items-center gap-2 mt-1 flex-wrap">
+								{#each Object.entries(breakdown) as [type, count]}
+									<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {getChangeTypeColor(type)}">
+										{count} {formatChangeType(type)}
+									</span>
+								{/each}
+							</div>
+						</div>
+					</div>
+					<a
+						href="/review?project_id={projectId}"
+						class="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 hover:shadow-md transition-all text-sm font-medium"
+					>
+						<Eye class="w-4 h-4" />
+						Review Changes
+					</a>
+				</div>
+
+				<!-- Preview of pending rules -->
+				{#if pendingChanges.length > 0}
+					<div class="border-t border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
+						{#each pendingChanges.slice(0, 5) as change}
+							<div class="flex items-center justify-between px-6 py-2.5">
+								<div class="flex items-center gap-2 min-w-0">
+									<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium {getChangeTypeColor(change.change_type)}">
+										{formatChangeType(change.change_type)}
+									</span>
+									<span class="text-sm text-gray-900 dark:text-gray-100 truncate">{change.rule_name}</span>
+								</div>
+								<span class="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2">{change.rule_id.substring(0, 8)}</span>
+							</div>
+						{/each}
+						{#if pendingTotal > 5}
+							<div class="px-6 py-2.5 text-center">
+								<a href="/review?project_id={projectId}" class="text-xs font-medium text-amber-600 hover:text-amber-700 dark:text-amber-400">
+									View all {pendingTotal} pending changes →
+								</a>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{/if}
+
 		<!-- Recent Syncs - Full Width -->
 		<div class="card animate-fade-in" style="animation-delay: 200ms; opacity: 0;">
 			<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -693,9 +805,27 @@
 									{#if job.changes_summary}
 										{@const summary = typeof job.changes_summary === 'string' ? JSON.parse(job.changes_summary) : job.changes_summary}
 										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-											{summary.exported || 0} exported
-											{#if summary.deleted}, {summary.deleted} deleted{/if}
-											{#if summary.imported}, {summary.imported} imported{/if}
+											{#if summary.changes_detected}
+												{summary.changes_detected} {summary.changes_detected === 1 ? 'change' : 'changes'} detected
+											{/if}
+											{#if summary.pending_created}
+												{#if summary.changes_detected}, {/if}{summary.pending_created} pending review
+											{/if}
+											{#if summary.exported}
+												{#if summary.changes_detected || summary.pending_created}, {/if}{summary.exported} exported
+											{/if}
+											{#if summary.imported}
+												{#if summary.changes_detected || summary.pending_created || summary.exported}, {/if}{summary.imported} imported
+											{/if}
+											{#if summary.deleted}
+												, {summary.deleted} deleted
+											{/if}
+											{#if summary.errors}
+												, {summary.errors} {summary.errors === 1 ? 'error' : 'errors'}
+											{/if}
+											{#if !summary.changes_detected && !summary.pending_created && !summary.exported && !summary.imported && !summary.deleted}
+												No changes
+											{/if}
 										</p>
 									{/if}
 								</div>
