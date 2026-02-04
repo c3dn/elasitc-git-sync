@@ -391,12 +391,35 @@ def _export_via_cli(kibana_url: str, api_key: str, space: str) -> tuple[list[dic
 
         env = os.environ.copy()
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        # Disable SSL verification via environment variables
+        env["PYTHONHTTPSVERIFY"] = "0"
+        env["REQUESTS_CA_BUNDLE"] = ""
+        env["CURL_CA_BUNDLE"] = ""
 
-        # Patch the SSL context so urllib3/requests skip cert validation
+        # Patch SSL at the Python level so urllib3/requests skip cert validation
         # (the CLI subprocess does not inherit our httpx verify=False).
         ssl_patch = (
-            "import ssl; ssl._create_default_https_context = ssl._create_unverified_context; "
-            "import runpy; runpy.run_module('detection_rules', run_name='__main__')"
+            "import ssl\n"
+            "ssl._create_default_https_context = ssl._create_unverified_context\n"
+            "_orig_ctx = ssl.create_default_context\n"
+            "def _noverify(*a, **kw):\n"
+            " c = _orig_ctx(*a, **kw)\n"
+            " c.check_hostname = False\n"
+            " c.verify_mode = ssl.CERT_NONE\n"
+            " return c\n"
+            "ssl.create_default_context = _noverify\n"
+            "try:\n"
+            " import urllib3\n"
+            " urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\n"
+            "except Exception:\n"
+            " pass\n"
+            "try:\n"
+            " import requests\n"
+            " requests.packages.urllib3.disable_warnings()\n"
+            "except Exception:\n"
+            " pass\n"
+            "import runpy\n"
+            "runpy.run_module('detection_rules', run_name='__main__')\n"
         )
         cli_args = cmd[3:]  # everything after "python3 -m detection_rules"
         cmd = ["python3", "-c", ssl_patch] + cli_args
