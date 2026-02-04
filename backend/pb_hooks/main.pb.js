@@ -882,7 +882,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
     // Audit log
     logAudit(e.app, {
-      user: "user",
+      user: "system",
       action: "sync_triggered",
       resource_type: "sync_job",
       resource_id: job.id,
@@ -1218,7 +1218,7 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
 
         // Audit log - GitLab MR
         logAudit(e.app, {
-          user: "user",
+          user: "system",
           action: "mr_created",
           resource_type: "project",
           resource_id: projectId,
@@ -1388,7 +1388,7 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
 
         // Audit log - GitHub PR
         logAudit(e.app, {
-          user: "user",
+          user: "system",
           action: "mr_created",
           resource_type: "project",
           resource_id: projectId,
@@ -3185,7 +3185,7 @@ routerAdd("POST", "/api/review/init-baseline", function(e) {
 
     // Audit log
     logAudit(e.app, {
-      user: "user",
+      user: "system",
       action: "baseline_initialized",
       resource_type: "baseline",
       resource_id: projectId,
