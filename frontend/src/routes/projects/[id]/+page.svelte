@@ -316,7 +316,7 @@
 			{:else if project}
 				<div class="flex items-center gap-3">
 					<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">{project.name}</h1>
-					<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {isExportOnly ? 'bg-yellow-100 text-yellow-700' : 'bg-primary-100 text-primary-700'}">
+					<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {isExportOnly ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-primary-100 text-primary-700'}">
 						{isExportOnly ? 'Export Only' : 'Full Workflow'}
 					</span>
 				</div>
@@ -424,10 +424,10 @@
 			{#if isExportOnly}
 				<!-- Export Only Workflow -->
 				<div class="max-w-md">
-					<div class="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800/50 rounded-xl p-5">
+					<div class="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/50 rounded-xl p-5">
 						<div class="flex items-center gap-3 mb-4">
-							<div class="p-2.5 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-								<Upload class="w-5 h-5 text-yellow-600" />
+							<div class="p-2.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+								<Upload class="w-5 h-5 text-emerald-600" />
 							</div>
 							<div>
 								<h3 class="font-semibold text-gray-900 dark:text-gray-100">Export to Git</h3>
@@ -453,7 +453,7 @@
 								<button
 									on:click={openRuleSelection}
 									disabled={syncingTest}
-									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
+									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
 								>
 									{#if syncingTest}
 										<Loader class="w-4 h-4 animate-spin" />
@@ -465,7 +465,7 @@
 								</button>
 							</div>
 						{:else}
-							<p class="text-sm text-yellow-700 dark:text-yellow-400">No environment configured</p>
+							<p class="text-sm text-emerald-700 dark:text-emerald-400">No environment configured</p>
 						{/if}
 					</div>
 				</div>

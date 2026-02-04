@@ -133,7 +133,7 @@
 							</div>
 							<div class="flex items-center gap-1.5">
 								{#if (project as any).sync_mode === 'export_only'}
-									<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+									<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
 										Export Only
 									</span>
 								{/if}
@@ -176,8 +176,8 @@
 							<!-- Production Environment (not shown for export_only) -->
 							{#if (project as any).sync_mode === 'export_only'}
 								<div class="flex items-center gap-2 text-gray-400 dark:text-gray-500">
-									<Upload class="w-4 h-4 text-yellow-500" />
-									<span class="text-xs text-yellow-600">Elastic to Git</span>
+									<Upload class="w-4 h-4 text-emerald-500" />
+									<span class="text-xs text-emerald-600 dark:text-emerald-400">Elastic → Git</span>
 								</div>
 							{:else if getProdEnv(project)}
 								{@const prodEnv = getProdEnv(project)}
