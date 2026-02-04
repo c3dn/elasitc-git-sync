@@ -1539,73 +1539,148 @@ routerAdd("POST", "/api/review/approve", function(e) {
   }
 
   function commitTomlToGit(app, projectId, ruleId, ruleName, tomlContent, isDelete) {
+    console.log("[Git-Commit] Starting commitTomlToGit: ruleId=" + ruleId + " ruleName=" + ruleName + " isDelete=" + isDelete + " tomlLength=" + (tomlContent ? tomlContent.length : 0));
     var project = app.findRecordById("projects", projectId);
     var gitRepoId = project.get("git_repository");
+    if (!gitRepoId) {
+      console.log("[Git-Commit] ERROR: No git_repository configured for project " + projectId);
+      return { success: false, message: "No git repository configured for project" };
+    }
     var gitRepo = app.findRecordById("git_repositories", gitRepoId);
     var gitProvider = gitRepo.get("provider");
     var gitToken = gitRepo.get("access_token");
     var gitBranch = gitRepo.get("default_branch") || "main";
     var gitRepoUrl = gitRepo.get("url").replace(/\.git$/, "");
     var gitPath = project.get("git_path") || "";
+    console.log("[Git-Commit] Config: provider=" + gitProvider + " repoUrl=" + gitRepoUrl + " defaultBranch=" + gitBranch + " gitPath=" + gitPath + " hasToken=" + !!gitToken);
     try {
       var envs = app.findRecordsByFilter("environments", "project = '" + projectId + "'", "", 1, 0);
-      if (envs.length > 0) { gitBranch = envs[0].get("git_branch") || gitBranch; }
-    } catch (err) {}
+      if (envs.length > 0) {
+        var envBranch = envs[0].get("git_branch");
+        var envName = envs[0].get("name") || "unknown";
+        console.log("[Git-Commit] Environment found: name=" + envName + " git_branch=" + (envBranch || "(not set)"));
+        if (envBranch) { gitBranch = envBranch; }
+      } else {
+        console.log("[Git-Commit] No environments found for project, using default branch: " + gitBranch);
+      }
+    } catch (err) {
+      console.log("[Git-Commit] WARNING: Failed to query environments: " + String(err));
+    }
     var fileName = ruleId + ".toml";
     var filePath = gitPath ? gitPath + "/" + fileName : fileName;
+    console.log("[Git-Commit] Resolved target: branch=" + gitBranch + " filePath=" + filePath);
     if (gitProvider === "gitlab") {
       var glMatch = gitRepoUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
-      if (!glMatch) return { success: false, message: "Invalid GitLab URL" };
+      if (!glMatch) {
+        console.log("[Git-Commit] ERROR: Invalid GitLab URL format: " + gitRepoUrl);
+        return { success: false, message: "Invalid GitLab URL: " + gitRepoUrl };
+      }
       var glApiBase = glMatch[1] + "/api/v4";
       var glProject = encodeURIComponent(glMatch[2]);
       var glFileUrl = glApiBase + "/projects/" + glProject + "/repository/files/" + encodeURIComponent(filePath);
+      console.log("[Git-Commit] GitLab API URL: " + glFileUrl);
       if (isDelete) {
         try {
+          console.log("[Git-Commit] GitLab DELETE request: branch=" + gitBranch);
           var delResp = $http.send({ url: glFileUrl, method: "DELETE", headers: { "Authorization": "Bearer " + gitToken, "Content-Type": "application/json" }, body: JSON.stringify({ branch: gitBranch, commit_message: "[Approved] Delete rule: " + ruleName }), timeout: 15 });
-          return { success: delResp.statusCode === 204 || delResp.statusCode === 200, message: "Deleted from Git" };
-        } catch (err) { return { success: false, message: String(err) }; }
+          console.log("[Git-Commit] GitLab DELETE response: statusCode=" + delResp.statusCode + " body=" + (delResp.raw || "").substring(0, 500));
+          var delSuccess = delResp.statusCode === 204 || delResp.statusCode === 200;
+          if (!delSuccess) { console.log("[Git-Commit] ERROR: GitLab DELETE failed with status " + delResp.statusCode); }
+          return { success: delSuccess, message: delSuccess ? "Deleted from Git" : "GitLab DELETE failed (HTTP " + delResp.statusCode + "): " + (delResp.raw || "").substring(0, 300) };
+        } catch (err) {
+          console.log("[Git-Commit] ERROR: GitLab DELETE exception: " + String(err));
+          return { success: false, message: "GitLab DELETE exception: " + String(err) };
+        }
       }
       var methods = ["PUT", "POST"];
+      var lastStatusCode = 0;
+      var lastResponseBody = "";
       for (var m = 0; m < methods.length; m++) {
         try {
+          console.log("[Git-Commit] GitLab " + methods[m] + " request: branch=" + gitBranch + " contentLength=" + (tomlContent ? tomlContent.length : 0));
           var glResp = $http.send({ url: glFileUrl, method: methods[m], headers: { "Authorization": "Bearer " + gitToken, "Content-Type": "application/json" }, body: JSON.stringify({ branch: gitBranch, content: tomlContent, commit_message: "[Approved] " + (methods[m] === "POST" ? "Add" : "Update") + " rule: " + ruleName }), timeout: 15 });
-          if (glResp.statusCode === 200 || glResp.statusCode === 201) { return { success: true, message: "Committed to Git" }; }
-        } catch (err) {}
+          lastStatusCode = glResp.statusCode;
+          lastResponseBody = (glResp.raw || "").substring(0, 500);
+          console.log("[Git-Commit] GitLab " + methods[m] + " response: statusCode=" + glResp.statusCode + " body=" + lastResponseBody);
+          if (glResp.statusCode === 200 || glResp.statusCode === 201) {
+            console.log("[Git-Commit] GitLab commit successful via " + methods[m]);
+            return { success: true, message: "Committed to Git via " + methods[m] };
+          }
+          console.log("[Git-Commit] GitLab " + methods[m] + " non-success status " + glResp.statusCode + ", trying next method...");
+        } catch (err) {
+          console.log("[Git-Commit] ERROR: GitLab " + methods[m] + " exception: " + String(err));
+          lastResponseBody = String(err);
+        }
       }
-      return { success: false, message: "Failed to commit to GitLab" };
+      var failMsg = "Failed to commit to GitLab (last HTTP " + lastStatusCode + "): " + lastResponseBody;
+      console.log("[Git-Commit] ERROR: " + failMsg);
+      return { success: false, message: failMsg };
     } else if (gitProvider === "github") {
       var ghMatch = gitRepoUrl.match(/github\.com\/(.+?)\/(.+?)$/);
-      if (!ghMatch) return { success: false, message: "Invalid GitHub URL" };
+      if (!ghMatch) {
+        console.log("[Git-Commit] ERROR: Invalid GitHub URL format: " + gitRepoUrl);
+        return { success: false, message: "Invalid GitHub URL: " + gitRepoUrl };
+      }
       var ghOwner = ghMatch[1];
       var ghRepoName = ghMatch[2];
       var ghApiUrl = "https://api.github.com/repos/" + ghOwner + "/" + ghRepoName + "/contents/" + filePath;
       var ghHeaders = { "Authorization": "token " + gitToken, "Accept": "application/vnd.github.v3+json" };
+      console.log("[Git-Commit] GitHub API URL: " + ghApiUrl + " owner=" + ghOwner + " repo=" + ghRepoName);
       var sha = "";
       try {
         var getResp = $http.send({ url: ghApiUrl + "?ref=" + gitBranch, method: "GET", headers: ghHeaders, timeout: 10 });
-        if (getResp.statusCode === 200) { sha = JSON.parse(getResp.raw).sha; }
-      } catch (err) {}
+        console.log("[Git-Commit] GitHub GET existing file: statusCode=" + getResp.statusCode);
+        if (getResp.statusCode === 200) {
+          sha = JSON.parse(getResp.raw).sha;
+          console.log("[Git-Commit] GitHub existing file SHA: " + sha);
+        } else {
+          console.log("[Git-Commit] GitHub file does not exist yet (status " + getResp.statusCode + ")");
+        }
+      } catch (err) {
+        console.log("[Git-Commit] GitHub GET file check failed (file may not exist): " + String(err));
+      }
       if (isDelete) {
-        if (!sha) return { success: true, message: "File already absent" };
+        if (!sha) {
+          console.log("[Git-Commit] GitHub DELETE: file already absent, skipping");
+          return { success: true, message: "File already absent" };
+        }
         try {
+          console.log("[Git-Commit] GitHub DELETE request: sha=" + sha + " branch=" + gitBranch);
           var ghDelResp = $http.send({ url: ghApiUrl, method: "DELETE", headers: ghHeaders, body: JSON.stringify({ message: "[Approved] Delete rule: " + ruleName, sha: sha, branch: gitBranch }), timeout: 15 });
-          return { success: ghDelResp.statusCode === 200, message: "Deleted from Git" };
-        } catch (err) { return { success: false, message: String(err) }; }
+          console.log("[Git-Commit] GitHub DELETE response: statusCode=" + ghDelResp.statusCode + " body=" + (ghDelResp.raw || "").substring(0, 500));
+          var ghDelSuccess = ghDelResp.statusCode === 200;
+          return { success: ghDelSuccess, message: ghDelSuccess ? "Deleted from Git" : "GitHub DELETE failed (HTTP " + ghDelResp.statusCode + "): " + (ghDelResp.raw || "").substring(0, 300) };
+        } catch (err) {
+          console.log("[Git-Commit] ERROR: GitHub DELETE exception: " + String(err));
+          return { success: false, message: "GitHub DELETE exception: " + String(err) };
+        }
       }
       try {
         var ghBody = { message: "[Approved] " + (sha ? "Update" : "Add") + " rule: " + ruleName, content: $security.base64Encode(tomlContent), branch: gitBranch };
         if (sha) ghBody.sha = sha;
+        console.log("[Git-Commit] GitHub PUT request: branch=" + gitBranch + " hasSha=" + !!sha + " contentLength=" + (tomlContent ? tomlContent.length : 0));
         var ghResp = $http.send({ url: ghApiUrl, method: "PUT", headers: ghHeaders, body: JSON.stringify(ghBody), timeout: 15 });
-        if (ghResp.statusCode === 200 || ghResp.statusCode === 201) { return { success: true, message: "Committed to Git" }; }
-      } catch (err) {}
-      return { success: false, message: "Failed to commit to GitHub" };
+        console.log("[Git-Commit] GitHub PUT response: statusCode=" + ghResp.statusCode + " body=" + (ghResp.raw || "").substring(0, 500));
+        if (ghResp.statusCode === 200 || ghResp.statusCode === 201) {
+          console.log("[Git-Commit] GitHub commit successful");
+          return { success: true, message: "Committed to Git" };
+        }
+        var ghFailMsg = "Failed to commit to GitHub (HTTP " + ghResp.statusCode + "): " + (ghResp.raw || "").substring(0, 300);
+        console.log("[Git-Commit] ERROR: " + ghFailMsg);
+        return { success: false, message: ghFailMsg };
+      } catch (err) {
+        console.log("[Git-Commit] ERROR: GitHub PUT exception: " + String(err));
+        return { success: false, message: "GitHub PUT exception: " + String(err) };
+      }
     }
+    console.log("[Git-Commit] ERROR: Unsupported provider: " + gitProvider);
     return { success: false, message: "Unsupported provider: " + gitProvider };
   }
 
   var data = e.requestInfo().body;
   var changeId = data.change_id;
-  var reviewedBy = data.reviewed_by || "reviewer";
+  var reviewedBy = data.reviewed_by || "unknown";
+  try { var authRecord = e.requestInfo().auth; if (authRecord) { reviewedBy = authRecord.get("email") || reviewedBy; } } catch(authErr) {}
 
   try {
     var change = e.app.findRecordById("pending_changes", changeId);
@@ -1743,7 +1818,9 @@ routerAdd("POST", "/api/review/approve", function(e) {
       resource_id: ruleId,
       resource_name: ruleName,
       project: projectId,
-      details: { change_type: changeType, git_result: gitResult.success, change_id: changeId }
+      details: { change_type: changeType, git_success: gitResult.success, git_message: gitResult.message, change_id: changeId },
+      status: gitResult.success ? "success" : "error",
+      error_message: gitResult.success ? "" : gitResult.message
     });
 
     return e.json(200, {
@@ -1753,6 +1830,7 @@ routerAdd("POST", "/api/review/approve", function(e) {
     });
 
   } catch (err) {
+    console.log("[Review-Approve] ERROR: Unhandled exception: " + String(err));
     return e.json(500, { success: false, message: String(err) });
   }
 });
@@ -1836,7 +1914,8 @@ routerAdd("POST", "/api/review/reject", function(e) {
 
   var data = e.requestInfo().body;
   var changeId = data.change_id;
-  var reviewedBy = data.reviewed_by || "reviewer";
+  var reviewedBy = data.reviewed_by || "unknown";
+  try { var authRecord = e.requestInfo().auth; if (authRecord) { reviewedBy = authRecord.get("email") || reviewedBy; } } catch(authErr) {}
 
   try {
     var change = e.app.findRecordById("pending_changes", changeId);
@@ -2129,74 +2208,149 @@ routerAdd("POST", "/api/review/bulk-approve", function(e) {
   }
 
   function commitTomlToGit(app, projectId, ruleId, ruleName, tomlContent, isDelete) {
+    console.log("[Git-Commit-Bulk] Starting commitTomlToGit: ruleId=" + ruleId + " ruleName=" + ruleName + " isDelete=" + isDelete + " tomlLength=" + (tomlContent ? tomlContent.length : 0));
     var project = app.findRecordById("projects", projectId);
     var gitRepoId = project.get("git_repository");
+    if (!gitRepoId) {
+      console.log("[Git-Commit-Bulk] ERROR: No git_repository configured for project " + projectId);
+      return { success: false, message: "No git repository configured for project" };
+    }
     var gitRepo = app.findRecordById("git_repositories", gitRepoId);
     var gitProvider = gitRepo.get("provider");
     var gitToken = gitRepo.get("access_token");
     var gitBranch = gitRepo.get("default_branch") || "main";
     var gitRepoUrl = gitRepo.get("url").replace(/\.git$/, "");
     var gitPath = project.get("git_path") || "";
+    console.log("[Git-Commit-Bulk] Config: provider=" + gitProvider + " repoUrl=" + gitRepoUrl + " defaultBranch=" + gitBranch + " gitPath=" + gitPath + " hasToken=" + !!gitToken);
     try {
       var envs = app.findRecordsByFilter("environments", "project = '" + projectId + "'", "", 1, 0);
-      if (envs.length > 0) { gitBranch = envs[0].get("git_branch") || gitBranch; }
-    } catch (err) {}
+      if (envs.length > 0) {
+        var envBranch = envs[0].get("git_branch");
+        var envName = envs[0].get("name") || "unknown";
+        console.log("[Git-Commit-Bulk] Environment found: name=" + envName + " git_branch=" + (envBranch || "(not set)"));
+        if (envBranch) { gitBranch = envBranch; }
+      } else {
+        console.log("[Git-Commit-Bulk] No environments found for project, using default branch: " + gitBranch);
+      }
+    } catch (err) {
+      console.log("[Git-Commit-Bulk] WARNING: Failed to query environments: " + String(err));
+    }
     var fileName = ruleId + ".toml";
     var filePath = gitPath ? gitPath + "/" + fileName : fileName;
+    console.log("[Git-Commit-Bulk] Resolved target: branch=" + gitBranch + " filePath=" + filePath);
     if (gitProvider === "gitlab") {
       var glMatch = gitRepoUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
-      if (!glMatch) return { success: false, message: "Invalid GitLab URL" };
+      if (!glMatch) {
+        console.log("[Git-Commit-Bulk] ERROR: Invalid GitLab URL format: " + gitRepoUrl);
+        return { success: false, message: "Invalid GitLab URL: " + gitRepoUrl };
+      }
       var glApiBase = glMatch[1] + "/api/v4";
       var glProject = encodeURIComponent(glMatch[2]);
       var glFileUrl = glApiBase + "/projects/" + glProject + "/repository/files/" + encodeURIComponent(filePath);
+      console.log("[Git-Commit-Bulk] GitLab API URL: " + glFileUrl);
       if (isDelete) {
         try {
+          console.log("[Git-Commit-Bulk] GitLab DELETE request: branch=" + gitBranch);
           var delResp = $http.send({ url: glFileUrl, method: "DELETE", headers: { "Authorization": "Bearer " + gitToken, "Content-Type": "application/json" }, body: JSON.stringify({ branch: gitBranch, commit_message: "[Approved] Delete rule: " + ruleName }), timeout: 15 });
-          return { success: delResp.statusCode === 204 || delResp.statusCode === 200, message: "Deleted from Git" };
-        } catch (err) { return { success: false, message: String(err) }; }
+          console.log("[Git-Commit-Bulk] GitLab DELETE response: statusCode=" + delResp.statusCode + " body=" + (delResp.raw || "").substring(0, 500));
+          var delSuccess = delResp.statusCode === 204 || delResp.statusCode === 200;
+          if (!delSuccess) { console.log("[Git-Commit-Bulk] ERROR: GitLab DELETE failed with status " + delResp.statusCode); }
+          return { success: delSuccess, message: delSuccess ? "Deleted from Git" : "GitLab DELETE failed (HTTP " + delResp.statusCode + "): " + (delResp.raw || "").substring(0, 300) };
+        } catch (err) {
+          console.log("[Git-Commit-Bulk] ERROR: GitLab DELETE exception: " + String(err));
+          return { success: false, message: "GitLab DELETE exception: " + String(err) };
+        }
       }
       var methods = ["PUT", "POST"];
+      var lastStatusCode = 0;
+      var lastResponseBody = "";
       for (var m = 0; m < methods.length; m++) {
         try {
+          console.log("[Git-Commit-Bulk] GitLab " + methods[m] + " request: branch=" + gitBranch + " contentLength=" + (tomlContent ? tomlContent.length : 0));
           var glResp = $http.send({ url: glFileUrl, method: methods[m], headers: { "Authorization": "Bearer " + gitToken, "Content-Type": "application/json" }, body: JSON.stringify({ branch: gitBranch, content: tomlContent, commit_message: "[Approved] " + (methods[m] === "POST" ? "Add" : "Update") + " rule: " + ruleName }), timeout: 15 });
-          if (glResp.statusCode === 200 || glResp.statusCode === 201) { return { success: true, message: "Committed to Git" }; }
-        } catch (err) {}
+          lastStatusCode = glResp.statusCode;
+          lastResponseBody = (glResp.raw || "").substring(0, 500);
+          console.log("[Git-Commit-Bulk] GitLab " + methods[m] + " response: statusCode=" + glResp.statusCode + " body=" + lastResponseBody);
+          if (glResp.statusCode === 200 || glResp.statusCode === 201) {
+            console.log("[Git-Commit-Bulk] GitLab commit successful via " + methods[m]);
+            return { success: true, message: "Committed to Git via " + methods[m] };
+          }
+          console.log("[Git-Commit-Bulk] GitLab " + methods[m] + " non-success status " + glResp.statusCode + ", trying next method...");
+        } catch (err) {
+          console.log("[Git-Commit-Bulk] ERROR: GitLab " + methods[m] + " exception: " + String(err));
+          lastResponseBody = String(err);
+        }
       }
-      return { success: false, message: "Failed to commit to GitLab" };
+      var failMsg = "Failed to commit to GitLab (last HTTP " + lastStatusCode + "): " + lastResponseBody;
+      console.log("[Git-Commit-Bulk] ERROR: " + failMsg);
+      return { success: false, message: failMsg };
     } else if (gitProvider === "github") {
       var ghMatch = gitRepoUrl.match(/github\.com\/(.+?)\/(.+?)$/);
-      if (!ghMatch) return { success: false, message: "Invalid GitHub URL" };
+      if (!ghMatch) {
+        console.log("[Git-Commit-Bulk] ERROR: Invalid GitHub URL format: " + gitRepoUrl);
+        return { success: false, message: "Invalid GitHub URL: " + gitRepoUrl };
+      }
       var ghOwner = ghMatch[1];
       var ghRepoName = ghMatch[2];
       var ghApiUrl = "https://api.github.com/repos/" + ghOwner + "/" + ghRepoName + "/contents/" + filePath;
       var ghHeaders = { "Authorization": "token " + gitToken, "Accept": "application/vnd.github.v3+json" };
+      console.log("[Git-Commit-Bulk] GitHub API URL: " + ghApiUrl + " owner=" + ghOwner + " repo=" + ghRepoName);
       var sha = "";
       try {
         var getResp = $http.send({ url: ghApiUrl + "?ref=" + gitBranch, method: "GET", headers: ghHeaders, timeout: 10 });
-        if (getResp.statusCode === 200) { sha = JSON.parse(getResp.raw).sha; }
-      } catch (err) {}
+        console.log("[Git-Commit-Bulk] GitHub GET existing file: statusCode=" + getResp.statusCode);
+        if (getResp.statusCode === 200) {
+          sha = JSON.parse(getResp.raw).sha;
+          console.log("[Git-Commit-Bulk] GitHub existing file SHA: " + sha);
+        } else {
+          console.log("[Git-Commit-Bulk] GitHub file does not exist yet (status " + getResp.statusCode + ")");
+        }
+      } catch (err) {
+        console.log("[Git-Commit-Bulk] GitHub GET file check failed (file may not exist): " + String(err));
+      }
       if (isDelete) {
-        if (!sha) return { success: true, message: "File already absent" };
+        if (!sha) {
+          console.log("[Git-Commit-Bulk] GitHub DELETE: file already absent, skipping");
+          return { success: true, message: "File already absent" };
+        }
         try {
+          console.log("[Git-Commit-Bulk] GitHub DELETE request: sha=" + sha + " branch=" + gitBranch);
           var ghDelResp = $http.send({ url: ghApiUrl, method: "DELETE", headers: ghHeaders, body: JSON.stringify({ message: "[Approved] Delete rule: " + ruleName, sha: sha, branch: gitBranch }), timeout: 15 });
-          return { success: ghDelResp.statusCode === 200, message: "Deleted from Git" };
-        } catch (err) { return { success: false, message: String(err) }; }
+          console.log("[Git-Commit-Bulk] GitHub DELETE response: statusCode=" + ghDelResp.statusCode + " body=" + (ghDelResp.raw || "").substring(0, 500));
+          var ghDelSuccess = ghDelResp.statusCode === 200;
+          return { success: ghDelSuccess, message: ghDelSuccess ? "Deleted from Git" : "GitHub DELETE failed (HTTP " + ghDelResp.statusCode + "): " + (ghDelResp.raw || "").substring(0, 300) };
+        } catch (err) {
+          console.log("[Git-Commit-Bulk] ERROR: GitHub DELETE exception: " + String(err));
+          return { success: false, message: "GitHub DELETE exception: " + String(err) };
+        }
       }
       try {
         var ghBody = { message: "[Approved] " + (sha ? "Update" : "Add") + " rule: " + ruleName, content: $security.base64Encode(tomlContent), branch: gitBranch };
         if (sha) ghBody.sha = sha;
+        console.log("[Git-Commit-Bulk] GitHub PUT request: branch=" + gitBranch + " hasSha=" + !!sha + " contentLength=" + (tomlContent ? tomlContent.length : 0));
         var ghResp = $http.send({ url: ghApiUrl, method: "PUT", headers: ghHeaders, body: JSON.stringify(ghBody), timeout: 15 });
-        if (ghResp.statusCode === 200 || ghResp.statusCode === 201) { return { success: true, message: "Committed to Git" }; }
-      } catch (err) {}
-      return { success: false, message: "Failed to commit to GitHub" };
+        console.log("[Git-Commit-Bulk] GitHub PUT response: statusCode=" + ghResp.statusCode + " body=" + (ghResp.raw || "").substring(0, 500));
+        if (ghResp.statusCode === 200 || ghResp.statusCode === 201) {
+          console.log("[Git-Commit-Bulk] GitHub commit successful");
+          return { success: true, message: "Committed to Git" };
+        }
+        var ghFailMsg = "Failed to commit to GitHub (HTTP " + ghResp.statusCode + "): " + (ghResp.raw || "").substring(0, 300);
+        console.log("[Git-Commit-Bulk] ERROR: " + ghFailMsg);
+        return { success: false, message: ghFailMsg };
+      } catch (err) {
+        console.log("[Git-Commit-Bulk] ERROR: GitHub PUT exception: " + String(err));
+        return { success: false, message: "GitHub PUT exception: " + String(err) };
+      }
     }
+    console.log("[Git-Commit-Bulk] ERROR: Unsupported provider: " + gitProvider);
     return { success: false, message: "Unsupported provider: " + gitProvider };
   }
 
   var data = e.requestInfo().body;
   var batchId = data.batch_id;
   var changeIds = data.change_ids;
-  var reviewedBy = data.reviewed_by || "reviewer";
+  var reviewedBy = data.reviewed_by || "unknown";
+  try { var authRecord = e.requestInfo().auth; if (authRecord) { reviewedBy = authRecord.get("email") || reviewedBy; } } catch(authErr) {}
 
   console.log("[Bulk-Approve] batch_id=" + batchId + ", changeIds=" + JSON.stringify(changeIds));
 
@@ -2380,7 +2534,8 @@ routerAdd("POST", "/api/review/bulk-reject", function(e) {
   var data = e.requestInfo().body;
   var batchId = data.batch_id;
   var changeIds = data.change_ids;
-  var reviewedBy = data.reviewed_by || "reviewer";
+  var reviewedBy = data.reviewed_by || "unknown";
+  try { var authRecord = e.requestInfo().auth; if (authRecord) { reviewedBy = authRecord.get("email") || reviewedBy; } } catch(authErr) {}
 
   var filter = "status = 'pending'";
   if (batchId) filter += " && detection_batch = '" + batchId + "'";
