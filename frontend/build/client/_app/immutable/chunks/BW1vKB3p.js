@@ -1,6 +1,0 @@
-import"./CWj6FrbW.js";import"./Dl2LfGm4.js";import{c as n,f as i,a as p}from"./C9NYA0Nw.js";import{I as l,s as m}from"./z_jCEgha.js";import{l as d,s as $}from"./Cs0PMOxO.js";function y(o,r){const e=d(r,["children","$$slots","$$events","$$legacy"]);/**
- * @license lucide-svelte v0.469.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */const t=[["circle",{cx:"11",cy:"11",r:"8"}],["path",{d:"m21 21-4.3-4.3"}]];l(o,$({name:"search"},()=>e,{get iconNode(){return t},children:(a,f)=>{var s=n(),c=i(s);m(c,r,"default",{}),p(a,s)},$$slots:{default:!0}}))}export{y as S};

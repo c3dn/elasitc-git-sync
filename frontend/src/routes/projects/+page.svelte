@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { pb } from '$lib/pocketbase';
-	import { Plus, Play, Settings, Trash2, TestTube, Rocket, GitBranch, Database, Upload } from 'lucide-svelte';
+	import { pb, apiFetch } from '$lib/pocketbase';
+	import { Plus, Play, Settings, Trash2, TestTube, Rocket, GitBranch, Database, Upload, Loader2 } from 'lucide-svelte';
 	import type { ProjectExpanded, Environment } from '$types';
 
 	interface ProjectWithEnvs extends ProjectExpanded {
@@ -11,6 +11,8 @@
 	let projects: ProjectWithEnvs[] = [];
 	let loading = true;
 	let error = '';
+	let exportingProject: string | null = null;
+	let exportMessage: { projectId: string; message: string; type: 'success' | 'error' } | null = null;
 
 	onMount(async () => {
 		await loadProjects();
@@ -67,6 +69,41 @@
 			await loadProjects();
 		} catch (err: any) {
 			alert(`Error: ${err.message}`);
+		}
+	}
+
+	async function quickExport(project: ProjectWithEnvs) {
+		const testEnv = getTestEnv(project);
+		if (!testEnv) return;
+
+		try {
+			exportingProject = project.id;
+			exportMessage = null;
+
+			const response = await apiFetch(`${pb.baseUrl}/api/sync/trigger`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					project_id: project.id,
+					environment_id: testEnv.id,
+					direction: 'elastic_to_git',
+					branch: testEnv.git_branch,
+					space: testEnv.elastic_space
+				})
+			});
+
+			const result = await response.json();
+
+			if (result.success) {
+				exportMessage = { projectId: project.id, message: result.message || 'Export complete', type: 'success' };
+			} else {
+				exportMessage = { projectId: project.id, message: result.message || 'Export failed', type: 'error' };
+			}
+		} catch (err: any) {
+			exportMessage = { projectId: project.id, message: err.message || 'Export failed', type: 'error' };
+		} finally {
+			exportingProject = null;
+			setTimeout(() => { exportMessage = null; }, 4000);
 		}
 	}
 </script>
@@ -215,8 +252,30 @@
 						</div>
 					</div>
 
+					<!-- Export Message -->
+					{#if exportMessage?.projectId === project.id}
+						<div class="px-4 py-2 text-xs font-medium {exportMessage.type === 'success' ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'}">
+							{exportMessage.message}
+						</div>
+					{/if}
+
 					<!-- Actions -->
 					<div class="flex items-center gap-2 p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+						{#if getTestEnv(project)}
+							<button
+								on:click={() => quickExport(project)}
+								disabled={exportingProject === project.id}
+								class="btn flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 hover:shadow-md transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{#if exportingProject === project.id}
+									<Loader2 class="w-4 h-4 animate-spin" />
+									Exporting...
+								{:else}
+									<Upload class="w-4 h-4" />
+									Quick Export
+								{/if}
+							</button>
+						{/if}
 						<a
 							href="/projects/{project.id}"
 							class="btn flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all text-sm"
@@ -226,7 +285,7 @@
 						</a>
 						<button
 							on:click={() => deleteProject(project.id)}
-							class="btn flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-all text-sm"
+							class="btn flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg transition-all text-sm"
 						>
 							<Trash2 class="w-4 h-4" />
 						</button>
