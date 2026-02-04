@@ -1,6 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
 migrate((app) => {
-  // Increase toml_content limit on pending_changes (was 50000, now 5000000)
+  // Fix: max=0 defaulted to 5000 in PocketBase. Set to 5000000 (5MB) explicitly.
   const pending = app.findCollectionByNameOrId("pending_changes");
   const pendingField = pending.fields.find(f => f.name === "toml_content");
   if (pendingField) {
@@ -8,7 +8,6 @@ migrate((app) => {
   }
   app.save(pending);
 
-  // Increase toml_content limit on rule_snapshots (was 50000, now 5000000)
   const snapshots = app.findCollectionByNameOrId("rule_snapshots");
   const snapshotField = snapshots.fields.find(f => f.name === "toml_content");
   if (snapshotField) {
@@ -16,7 +15,6 @@ migrate((app) => {
   }
   app.save(snapshots);
 }, (app) => {
-  // Revert: set toml_content back to 50000 on both collections
   const pending = app.findCollectionByNameOrId("pending_changes");
   const pendingField = pending.fields.find(f => f.name === "toml_content");
   if (pendingField) {
