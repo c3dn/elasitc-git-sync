@@ -1739,58 +1739,63 @@ routerAdd("POST", "/api/review/approve", function(e) {
     change.set("reviewed_at", new Date().toISOString());
     e.app.save(change);
 
-    // Update rule snapshot
-    if (!isDelete && currentState) {
-      try {
-        var snapFilter = "project = '" + projectId + "' && rule_id = '" + ruleId + "'";
-        if (environmentId) snapFilter += " && environment = '" + environmentId + "'";
-        var existingSnaps = e.app.findRecordsByFilter("rule_snapshots", snapFilter, "", 1, 0);
-        var snap;
-        if (existingSnaps.length > 0) {
-          snap = existingSnaps[0];
-        } else {
-          var snapCol = e.app.findCollectionByNameOrId("rule_snapshots");
-          snap = new Record(snapCol);
-          snap.set("project", projectId);
-          if (environmentId) snap.set("environment", environmentId);
-          snap.set("rule_id", ruleId);
-        }
-        snap.set("rule_name", ruleName);
-        snap.set("rule_content", currentState);
-        snap.set("toml_content", tomlContent || "");
-        snap.set("enabled", currentState.enabled || false);
-        snap.set("severity", currentState.severity || "");
-        snap.set("tags", currentState.tags || []);
-        snap.set("exceptions", currentState.exceptions_list || []);
-        snap.set("last_approved_at", new Date().toISOString());
-
-        // Compute hash via sync service
+    // Only update rule snapshot if Git commit succeeded (or was not needed).
+    // If Git failed, keep the old snapshot so the change reappears on next sync.
+    if (gitResult.success) {
+      if (!isDelete && currentState) {
         try {
-          var hashResp = $http.send({
-            url: "http://localhost:8091/compute-hash",
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ rule: currentState }),
-            timeout: 10
-          });
-          if (hashResp.statusCode === 200) {
-            snap.set("rule_hash", JSON.parse(hashResp.raw).rule_hash);
+          var snapFilter = "project = '" + projectId + "' && rule_id = '" + ruleId + "'";
+          if (environmentId) snapFilter += " && environment = '" + environmentId + "'";
+          var existingSnaps = e.app.findRecordsByFilter("rule_snapshots", snapFilter, "", 1, 0);
+          var snap;
+          if (existingSnaps.length > 0) {
+            snap = existingSnaps[0];
+          } else {
+            var snapCol = e.app.findCollectionByNameOrId("rule_snapshots");
+            snap = new Record(snapCol);
+            snap.set("project", projectId);
+            if (environmentId) snap.set("environment", environmentId);
+            snap.set("rule_id", ruleId);
+          }
+          snap.set("rule_name", ruleName);
+          snap.set("rule_content", currentState);
+          snap.set("toml_content", tomlContent || "");
+          snap.set("enabled", currentState.enabled || false);
+          snap.set("severity", currentState.severity || "");
+          snap.set("tags", currentState.tags || []);
+          snap.set("exceptions", currentState.exceptions_list || []);
+          snap.set("last_approved_at", new Date().toISOString());
+
+          // Compute hash via sync service
+          try {
+            var hashResp = $http.send({
+              url: "http://localhost:8091/compute-hash",
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ rule: currentState }),
+              timeout: 10
+            });
+            if (hashResp.statusCode === 200) {
+              snap.set("rule_hash", JSON.parse(hashResp.raw).rule_hash);
+            }
+          } catch (err) {}
+
+          e.app.save(snap);
+        } catch (err) {
+          console.log("[Review] Snapshot update error: " + String(err));
+        }
+      } else if (isDelete) {
+        // Remove snapshot for deleted rule
+        try {
+          var delSnapFilter = "project = '" + projectId + "' && rule_id = '" + ruleId + "'";
+          var delSnaps = e.app.findRecordsByFilter("rule_snapshots", delSnapFilter, "", 1, 0);
+          if (delSnaps.length > 0) {
+            e.app.delete(delSnaps[0]);
           }
         } catch (err) {}
-
-        e.app.save(snap);
-      } catch (err) {
-        console.log("[Review] Snapshot update error: " + String(err));
       }
-    } else if (isDelete) {
-      // Remove snapshot for deleted rule
-      try {
-        var delSnapFilter = "project = '" + projectId + "' && rule_id = '" + ruleId + "'";
-        var delSnaps = e.app.findRecordsByFilter("rule_snapshots", delSnapFilter, "", 1, 0);
-        if (delSnaps.length > 0) {
-          e.app.delete(delSnaps[0]);
-        }
-      } catch (err) {}
+    } else {
+      console.log("[Review-Approve] Git commit failed — snapshot NOT updated so change reappears on next sync. Rule: " + ruleName);
     }
 
     // Create notification
@@ -1909,6 +1914,74 @@ routerAdd("POST", "/api/review/reject", function(e) {
       }
     } catch (err) {
       console.log("[Webhook] Error loading configs: " + String(err));
+    }
+  }
+
+  // Archive a rejected rule's TOML to Git under deleted/{YYYY-MM-DD}/
+  function archiveRejectedToGit(app, projectId, ruleId, ruleName, tomlContent, reviewedBy) {
+    if (!tomlContent) return { success: false, message: "No TOML content to archive" };
+    try {
+      var project = app.findRecordById("projects", projectId);
+      var gitRepoId = project.get("git_repository");
+      if (!gitRepoId) return { success: false, message: "No git repository configured" };
+      var gitRepo = app.findRecordById("git_repositories", gitRepoId);
+      var gitProvider = gitRepo.get("provider");
+      var gitToken = gitRepo.get("access_token");
+      var gitBranch = gitRepo.get("default_branch") || "main";
+      var gitRepoUrl = gitRepo.get("url").replace(/\.git$/, "");
+      var gitPath = project.get("git_path") || "";
+      try {
+        var envs = app.findRecordsByFilter("environments", "project = '" + projectId + "'", "", 1, 0);
+        if (envs.length > 0) { gitBranch = envs[0].get("git_branch") || gitBranch; }
+      } catch (err) {}
+      var today = new Date().toISOString().substring(0, 10); // YYYY-MM-DD
+      var fileName = ruleId + ".toml";
+      var deletedPath = gitPath ? gitPath + "/deleted/" + today + "/" + fileName : "deleted/" + today + "/" + fileName;
+      var commitMsg = "[Rejected] Archive rule: " + ruleName + " (rejected by " + reviewedBy + ")";
+      console.log("[Git-Archive] Archiving rejected rule to: " + deletedPath + " branch=" + gitBranch);
+
+      if (gitProvider === "gitlab") {
+        var glMatch = gitRepoUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
+        if (!glMatch) return { success: false, message: "Invalid GitLab URL" };
+        var glApiBase = glMatch[1] + "/api/v4";
+        var glProject = encodeURIComponent(glMatch[2]);
+        var glFileUrl = glApiBase + "/projects/" + glProject + "/repository/files/" + encodeURIComponent(deletedPath);
+        var methods = ["PUT", "POST"];
+        for (var m = 0; m < methods.length; m++) {
+          try {
+            var glResp = $http.send({ url: glFileUrl, method: methods[m], headers: { "Authorization": "Bearer " + gitToken, "Content-Type": "application/json" }, body: JSON.stringify({ branch: gitBranch, content: tomlContent, commit_message: commitMsg }), timeout: 15 });
+            console.log("[Git-Archive] GitLab " + methods[m] + " response: " + glResp.statusCode);
+            if (glResp.statusCode === 200 || glResp.statusCode === 201) return { success: true, message: "Archived to Git" };
+          } catch (err) {
+            console.log("[Git-Archive] GitLab " + methods[m] + " error: " + String(err));
+          }
+        }
+        return { success: false, message: "Failed to archive to GitLab" };
+      } else if (gitProvider === "github") {
+        var ghMatch = gitRepoUrl.match(/github\.com\/(.+?)\/(.+?)$/);
+        if (!ghMatch) return { success: false, message: "Invalid GitHub URL" };
+        var ghApiUrl = "https://api.github.com/repos/" + ghMatch[1] + "/" + ghMatch[2] + "/contents/" + deletedPath;
+        var ghHeaders = { "Authorization": "token " + gitToken, "Accept": "application/vnd.github.v3+json" };
+        var sha = "";
+        try {
+          var getResp = $http.send({ url: ghApiUrl + "?ref=" + gitBranch, method: "GET", headers: ghHeaders, timeout: 10 });
+          if (getResp.statusCode === 200) sha = JSON.parse(getResp.raw).sha;
+        } catch (err) {}
+        try {
+          var ghBody = { message: commitMsg, content: $security.base64Encode(tomlContent), branch: gitBranch };
+          if (sha) ghBody.sha = sha;
+          var ghResp = $http.send({ url: ghApiUrl, method: "PUT", headers: ghHeaders, body: JSON.stringify(ghBody), timeout: 15 });
+          console.log("[Git-Archive] GitHub PUT response: " + ghResp.statusCode);
+          if (ghResp.statusCode === 200 || ghResp.statusCode === 201) return { success: true, message: "Archived to Git" };
+        } catch (err) {
+          console.log("[Git-Archive] GitHub PUT error: " + String(err));
+        }
+        return { success: false, message: "Failed to archive to GitHub" };
+      }
+      return { success: false, message: "Unsupported provider: " + gitProvider };
+    } catch (err) {
+      console.log("[Git-Archive] Error: " + String(err));
+      return { success: false, message: String(err) };
     }
   }
 
@@ -2122,6 +2195,32 @@ routerAdd("POST", "/api/review/reject", function(e) {
       e.app.save(change);
     }
 
+    // Archive the rejected rule to Git under deleted/{YYYY-MM-DD}/
+    var archiveResult = { success: false, message: "skipped" };
+    if (currentState) {
+      var archiveToml = change.get("toml_content") || "";
+      if (!archiveToml) {
+        try {
+          var tomlResp = $http.send({
+            url: "http://localhost:8091/export-toml",
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rule: currentState }),
+            timeout: 15
+          });
+          if (tomlResp.statusCode === 200) {
+            archiveToml = JSON.parse(tomlResp.raw).toml_content;
+          }
+        } catch (err) {
+          console.log("[Review-Reject] TOML conversion for archive failed: " + String(err));
+        }
+      }
+      if (archiveToml) {
+        archiveResult = archiveRejectedToGit(e.app, projectId, ruleId, ruleName, archiveToml, reviewedBy);
+        console.log("[Review-Reject] Archive result: " + JSON.stringify(archiveResult));
+      }
+    }
+
     // Create notification
     var notifSeverity = reverted ? "info" : "warning";
     var notifType = reverted ? "change_rejected" : "revert_failed";
@@ -2139,7 +2238,8 @@ routerAdd("POST", "/api/review/reject", function(e) {
       change_type: changeType,
       reviewed_by: reviewedBy,
       reverted: reverted,
-      revert_message: revertMessage
+      revert_message: revertMessage,
+      archive_result: archiveResult
     });
 
     // Audit log
@@ -2150,7 +2250,7 @@ routerAdd("POST", "/api/review/reject", function(e) {
       resource_id: ruleId,
       resource_name: ruleName,
       project: projectId,
-      details: { change_type: changeType, reverted: reverted, revert_message: revertMessage, change_id: changeId }
+      details: { change_type: changeType, reverted: reverted, revert_message: revertMessage, change_id: changeId, archive_success: archiveResult.success }
     });
 
     return e.json(200, {
@@ -2425,49 +2525,54 @@ routerAdd("POST", "/api/review/bulk-approve", function(e) {
         change.set("reviewed_at", new Date().toISOString());
         e.app.save(change);
 
-        // Update rule snapshot
-        if (!isDelete && currentState) {
-          try {
-            var snapFilter = "project = '" + projectId + "' && rule_id = '" + ruleId + "'";
-            if (environmentId) snapFilter += " && environment = '" + environmentId + "'";
-            var existingSnaps = e.app.findRecordsByFilter("rule_snapshots", snapFilter, "", 1, 0);
-            var snap;
-            if (existingSnaps.length > 0) {
-              snap = existingSnaps[0];
-            } else {
-              var snapCol = e.app.findCollectionByNameOrId("rule_snapshots");
-              snap = new Record(snapCol);
-              snap.set("project", projectId);
-              if (environmentId) snap.set("environment", environmentId);
-              snap.set("rule_id", ruleId);
-            }
-            snap.set("rule_name", ruleName);
-            snap.set("rule_content", currentState);
-            snap.set("toml_content", tomlContent || "");
-            snap.set("enabled", currentState.enabled || false);
-            snap.set("severity", currentState.severity || "");
-            snap.set("tags", currentState.tags || []);
-            snap.set("exceptions", currentState.exceptions_list || []);
-            snap.set("last_approved_at", new Date().toISOString());
-            // Compute hash via sync service
+        // Only update rule snapshot if Git commit succeeded (or was not needed).
+        // If Git failed, keep the old snapshot so the change reappears on next sync.
+        if (gitResult.success) {
+          if (!isDelete && currentState) {
             try {
-              var hashResp = $http.send({
-                url: "http://localhost:8091/compute-hash",
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ rule: currentState }),
-                timeout: 10
-              });
-              if (hashResp.statusCode === 200) {
-                snap.set("rule_hash", JSON.parse(hashResp.raw).rule_hash);
+              var snapFilter = "project = '" + projectId + "' && rule_id = '" + ruleId + "'";
+              if (environmentId) snapFilter += " && environment = '" + environmentId + "'";
+              var existingSnaps = e.app.findRecordsByFilter("rule_snapshots", snapFilter, "", 1, 0);
+              var snap;
+              if (existingSnaps.length > 0) {
+                snap = existingSnaps[0];
+              } else {
+                var snapCol = e.app.findCollectionByNameOrId("rule_snapshots");
+                snap = new Record(snapCol);
+                snap.set("project", projectId);
+                if (environmentId) snap.set("environment", environmentId);
+                snap.set("rule_id", ruleId);
               }
-            } catch (err2) {
-              console.log("[Bulk-Approve] Hash compute error for " + ruleId + ": " + String(err2));
+              snap.set("rule_name", ruleName);
+              snap.set("rule_content", currentState);
+              snap.set("toml_content", tomlContent || "");
+              snap.set("enabled", currentState.enabled || false);
+              snap.set("severity", currentState.severity || "");
+              snap.set("tags", currentState.tags || []);
+              snap.set("exceptions", currentState.exceptions_list || []);
+              snap.set("last_approved_at", new Date().toISOString());
+              // Compute hash via sync service
+              try {
+                var hashResp = $http.send({
+                  url: "http://localhost:8091/compute-hash",
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ rule: currentState }),
+                  timeout: 10
+                });
+                if (hashResp.statusCode === 200) {
+                  snap.set("rule_hash", JSON.parse(hashResp.raw).rule_hash);
+                }
+              } catch (err2) {
+                console.log("[Bulk-Approve] Hash compute error for " + ruleId + ": " + String(err2));
+              }
+              e.app.save(snap);
+            } catch (err) {
+              console.log("[Bulk-Approve] Snapshot update error for " + ruleId + ": " + String(err));
             }
-            e.app.save(snap);
-          } catch (err) {
-            console.log("[Bulk-Approve] Snapshot update error for " + ruleId + ": " + String(err));
           }
+        } else {
+          console.log("[Bulk-Approve] Git commit failed for " + ruleName + " — snapshot NOT updated so change reappears on next sync");
         }
 
         approved++;
@@ -2531,6 +2636,68 @@ routerAdd("POST", "/api/review/bulk-reject", function(e) {
     }
   }
 
+  // Archive a rejected rule's TOML to Git under deleted/{YYYY-MM-DD}/
+  function archiveRejectedToGit(app, projectId, ruleId, ruleName, tomlContent, reviewedBy) {
+    if (!tomlContent) return { success: false, message: "No TOML content to archive" };
+    try {
+      var project = app.findRecordById("projects", projectId);
+      var gitRepoId = project.get("git_repository");
+      if (!gitRepoId) return { success: false, message: "No git repository configured" };
+      var gitRepo = app.findRecordById("git_repositories", gitRepoId);
+      var gitProvider = gitRepo.get("provider");
+      var gitToken = gitRepo.get("access_token");
+      var gitBranch = gitRepo.get("default_branch") || "main";
+      var gitRepoUrl = gitRepo.get("url").replace(/\.git$/, "");
+      var gitPath = project.get("git_path") || "";
+      try {
+        var envs = app.findRecordsByFilter("environments", "project = '" + projectId + "'", "", 1, 0);
+        if (envs.length > 0) { gitBranch = envs[0].get("git_branch") || gitBranch; }
+      } catch (err) {}
+      var today = new Date().toISOString().substring(0, 10);
+      var fileName = ruleId + ".toml";
+      var deletedPath = gitPath ? gitPath + "/deleted/" + today + "/" + fileName : "deleted/" + today + "/" + fileName;
+      var commitMsg = "[Rejected] Archive rule: " + ruleName + " (rejected by " + reviewedBy + ")";
+      console.log("[Git-Archive-Bulk] Archiving rejected rule to: " + deletedPath);
+
+      if (gitProvider === "gitlab") {
+        var glMatch = gitRepoUrl.match(/^(https?:\/\/[^\/]+)\/(.+)$/);
+        if (!glMatch) return { success: false, message: "Invalid GitLab URL" };
+        var glApiBase = glMatch[1] + "/api/v4";
+        var glProject = encodeURIComponent(glMatch[2]);
+        var glFileUrl = glApiBase + "/projects/" + glProject + "/repository/files/" + encodeURIComponent(deletedPath);
+        var methods = ["PUT", "POST"];
+        for (var m = 0; m < methods.length; m++) {
+          try {
+            var glResp = $http.send({ url: glFileUrl, method: methods[m], headers: { "Authorization": "Bearer " + gitToken, "Content-Type": "application/json" }, body: JSON.stringify({ branch: gitBranch, content: tomlContent, commit_message: commitMsg }), timeout: 15 });
+            if (glResp.statusCode === 200 || glResp.statusCode === 201) return { success: true, message: "Archived to Git" };
+          } catch (err) {}
+        }
+        return { success: false, message: "Failed to archive to GitLab" };
+      } else if (gitProvider === "github") {
+        var ghMatch = gitRepoUrl.match(/github\.com\/(.+?)\/(.+?)$/);
+        if (!ghMatch) return { success: false, message: "Invalid GitHub URL" };
+        var ghApiUrl = "https://api.github.com/repos/" + ghMatch[1] + "/" + ghMatch[2] + "/contents/" + deletedPath;
+        var ghHeaders = { "Authorization": "token " + gitToken, "Accept": "application/vnd.github.v3+json" };
+        var sha = "";
+        try {
+          var getResp = $http.send({ url: ghApiUrl + "?ref=" + gitBranch, method: "GET", headers: ghHeaders, timeout: 10 });
+          if (getResp.statusCode === 200) sha = JSON.parse(getResp.raw).sha;
+        } catch (err) {}
+        try {
+          var ghBody = { message: commitMsg, content: $security.base64Encode(tomlContent), branch: gitBranch };
+          if (sha) ghBody.sha = sha;
+          var ghResp = $http.send({ url: ghApiUrl, method: "PUT", headers: ghHeaders, body: JSON.stringify(ghBody), timeout: 15 });
+          if (ghResp.statusCode === 200 || ghResp.statusCode === 201) return { success: true, message: "Archived to Git" };
+        } catch (err) {}
+        return { success: false, message: "Failed to archive to GitHub" };
+      }
+      return { success: false, message: "Unsupported provider: " + gitProvider };
+    } catch (err) {
+      console.log("[Git-Archive-Bulk] Error: " + String(err));
+      return { success: false, message: String(err) };
+    }
+  }
+
   var data = e.requestInfo().body;
   var batchId = data.batch_id;
   var changeIds = data.change_ids;
@@ -2584,6 +2751,31 @@ routerAdd("POST", "/api/review/bulk-reject", function(e) {
           for (var csi = 0; csi < currentState.length; csi++) csStr += String.fromCharCode(currentState[csi]);
           try { csStr = decodeURIComponent(escape(csStr)); } catch(ue) {}
           try { currentState = JSON.parse(csStr); } catch (err) {}
+        }
+
+        // Archive the rejected rule to Git under deleted/{YYYY-MM-DD}/
+        if (currentState) {
+          var archiveToml = rec.get("toml_content") || "";
+          if (!archiveToml) {
+            try {
+              var tomlResp = $http.send({
+                url: "http://localhost:8091/export-toml",
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ rule: currentState }),
+                timeout: 15
+              });
+              if (tomlResp.statusCode === 200) {
+                archiveToml = JSON.parse(tomlResp.raw).toml_content;
+              }
+            } catch (err) {
+              console.log("[Bulk-Reject] TOML conversion for archive failed for " + ruleId + ": " + String(err));
+            }
+          }
+          if (archiveToml) {
+            var archiveRes = archiveRejectedToGit(e.app, projectId, ruleId, ruleName, archiveToml, reviewedBy);
+            console.log("[Bulk-Reject] Archive for " + ruleName + ": " + JSON.stringify(archiveRes));
+          }
         }
 
         // Get Elastic connection info (cached per project+env)
