@@ -150,8 +150,8 @@
 	</div>
 
 	{#if error}
-		<div class="bg-red-50 border border-red-200 rounded-lg p-4">
-			<p class="text-sm text-red-800">{error}</p>
+		<div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 rounded-lg p-4">
+			<p class="text-sm text-red-800 dark:text-red-300">{error}</p>
 		</div>
 	{/if}
 
@@ -172,7 +172,7 @@
 				<div class="card p-4">
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-3 flex-1 min-w-0">
-							<div class="p-2 rounded-lg {hook.is_active ? 'bg-green-100' : 'bg-gray-100 dark:bg-gray-800'}">
+							<div class="p-2 rounded-lg {hook.is_active ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-800'}">
 								<Webhook class="w-5 h-5 {hook.is_active ? 'text-green-600' : 'text-gray-400 dark:text-gray-500'}" />
 							</div>
 							<div class="min-w-0 flex-1">
@@ -204,7 +204,7 @@
 						<div class="flex items-center gap-1">
 							<button
 								onclick={() => testWebhook(hook.id)}
-								class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+								class="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
 								title="Send test webhook"
 							>
 								<Send class="w-4 h-4" />
@@ -218,7 +218,7 @@
 							</button>
 							<button
 								onclick={() => deleteWebhook(hook.id)}
-								class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+								class="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
 								title="Delete"
 							>
 								<Trash2 class="w-4 h-4" />

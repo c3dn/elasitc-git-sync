@@ -167,9 +167,9 @@
 
 <div class="space-y-6">
 	{#if sslVerificationDisabled}
-		<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-			<p class="text-sm text-yellow-800 font-medium">SSL certificate verification is disabled</p>
-			<p class="text-xs text-yellow-700 mt-1">
+		<div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900/50 rounded-lg p-4">
+			<p class="text-sm text-yellow-800 dark:text-yellow-300 font-medium">SSL certificate verification is disabled</p>
+			<p class="text-xs text-yellow-700 dark:text-yellow-400 mt-1">
 				The DISABLE_SSL_VERIFY environment variable is set to true. All outgoing HTTPS connections skip certificate verification.
 			</p>
 		</div>
@@ -192,8 +192,8 @@
 			</h3>
 
 			{#if error}
-				<div class="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
-					<p class="text-sm text-red-800">{error}</p>
+				<div class="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 rounded-lg p-4">
+					<p class="text-sm text-red-800 dark:text-red-300">{error}</p>
 				</div>
 			{/if}
 
@@ -320,7 +320,7 @@
 						<div class="flex items-center gap-2">
 							<span
 								class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-								{instance.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'}"
+								{instance.is_active ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'}"
 							>
 								{instance.is_active ? 'Active' : 'Inactive'}
 							</span>
@@ -344,7 +344,7 @@
 						</button>
 						<button
 							onclick={() => deleteInstance(instance.id)}
-							class="ml-auto inline-flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm"
+							class="ml-auto inline-flex items-center gap-2 px-3 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-sm"
 						>
 							<Trash2 class="w-4 h-4" />
 							Delete

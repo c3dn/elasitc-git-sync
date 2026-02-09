@@ -36,16 +36,16 @@
 		</div>
 
 		{#if success}
-			<div class="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg mb-4">
-				<CheckCircle class="w-5 h-5 text-green-600 flex-shrink-0" />
-				<span class="text-sm text-green-700">Password changed successfully.</span>
+			<div class="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900/50 rounded-lg mb-4">
+				<CheckCircle class="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+				<span class="text-sm text-green-700 dark:text-green-300">Password changed successfully.</span>
 			</div>
 		{/if}
 
 		{#if form?.error}
-			<div class="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
-				<AlertTriangle class="w-5 h-5 text-red-600 flex-shrink-0" />
-				<span class="text-sm text-red-700">{form.error}</span>
+			<div class="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 rounded-lg mb-4">
+				<AlertTriangle class="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+				<span class="text-sm text-red-700 dark:text-red-300">{form.error}</span>
 			</div>
 		{/if}
 
