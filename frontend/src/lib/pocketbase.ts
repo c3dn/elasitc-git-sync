@@ -19,18 +19,12 @@ pb.authStore.onChange((token, model) => {
 
 // Load auth from cookie on client side
 if (browser) {
-	const authCookie = document.cookie
-		.split('; ')
-		.find((row) => row.startsWith('pb_auth='));
-
-	if (authCookie) {
-		try {
-			const cookieValue = authCookie.split('=')[1];
-			pb.authStore.loadFromCookie(cookieValue);
-			currentUser.set(pb.authStore.model);
-		} catch (err) {
-			console.error('Failed to load auth from cookie:', err);
-		}
+	try {
+		// PocketBase expects the full cookie header string, not a sliced value.
+		pb.authStore.loadFromCookie(document.cookie || '');
+		currentUser.set(pb.authStore.model);
+	} catch (err) {
+		console.error('Failed to load auth from cookie:', err);
 	}
 }
 
