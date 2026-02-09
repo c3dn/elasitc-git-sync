@@ -464,7 +464,121 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
     }
   }
 
-  var data = e.requestInfo().body;
+  function esc(v) {
+    return String(v || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  }
+
+  function extractAuthToken() {
+    var token = "";
+    try { token = e.request.header.get("Authorization") || ""; } catch(_x) {}
+    if (!token) return "";
+    token = String(token).trim();
+    if (token.indexOf("Bearer ") === 0 || token.indexOf("bearer ") === 0) {
+      token = token.substring(7).trim();
+    }
+    return token;
+  }
+
+  function resolveAuthRecord() {
+    try {
+      var a = e.requestInfo().auth;
+      if (a) return a;
+    } catch(_x) {}
+    try {
+      var token = extractAuthToken();
+      if (!token) return null;
+      return e.app.findAuthRecordByToken(token, "auth");
+    } catch(_x) {}
+    return null;
+  }
+
+  function loadRuleSnapshots(app, projectId, environmentId) {
+    var out = [];
+    var filter = "project = '" + esc(projectId) + "'";
+    if (environmentId) filter += " && environment = '" + esc(environmentId) + "'";
+    var pageSize = 1000;
+    var offset = 0;
+
+    while (true) {
+      var snaps = app.findRecordsByFilter("rule_snapshots", filter, "", pageSize, offset);
+      if (!snaps || snaps.length === 0) break;
+      for (var si = 0; si < snaps.length; si++) {
+        var s = snaps[si];
+        var rc = s.get("rule_content");
+        if (rc && typeof rc[0] === "number") {
+          var rcStr = "";
+          for (var bi = 0; bi < rc.length; bi++) rcStr += String.fromCharCode(rc[bi]);
+          try { rcStr = decodeURIComponent(escape(rcStr)); } catch(ue) {}
+          try { rc = JSON.parse(rcStr); } catch (err) {}
+        }
+        var exc = s.get("exceptions") || [];
+        if (exc && typeof exc[0] === "number") {
+          var excStr = "";
+          for (var bi2 = 0; bi2 < exc.length; bi2++) excStr += String.fromCharCode(exc[bi2]);
+          try { excStr = decodeURIComponent(escape(excStr)); } catch(ue) {}
+          try { exc = JSON.parse(excStr); } catch (err) { exc = []; }
+        }
+        var tgs = s.get("tags") || [];
+        if (tgs && typeof tgs[0] === "number") {
+          var tgsStr = "";
+          for (var bi3 = 0; bi3 < tgs.length; bi3++) tgsStr += String.fromCharCode(tgs[bi3]);
+          try { tgsStr = decodeURIComponent(escape(tgsStr)); } catch(ue) {}
+          try { tgs = JSON.parse(tgsStr); } catch (err) { tgs = []; }
+        }
+        out.push({
+          rule_id: s.get("rule_id"),
+          rule_name: s.get("rule_name"),
+          rule_hash: s.get("rule_hash"),
+          rule_content: rc,
+          exceptions: exc,
+          enabled: s.get("enabled"),
+          severity: s.get("severity"),
+          tags: tgs
+        });
+      }
+      if (snaps.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return out;
+  }
+
+  function findPendingChange(app, projectId, environmentId, ruleId) {
+    var filter = "project = '" + esc(projectId) + "' && status = 'pending' && rule_id = '" + esc(ruleId) + "'";
+    if (environmentId) {
+      filter += " && environment = '" + esc(environmentId) + "'";
+    } else {
+      filter += " && (environment = '' || environment = null)";
+    }
+    var existing = app.findRecordsByFilter("pending_changes", filter, "-created", 1, 0);
+    if (existing && existing.length > 0) return existing[0];
+    return null;
+  }
+
+  function upsertPendingChange(app, pendingCol, params) {
+    var pending = findPendingChange(app, params.projectId, params.environmentId, params.change.rule_id);
+    var created = false;
+    if (!pending) {
+      pending = new Record(pendingCol);
+      pending.set("project", params.projectId);
+      if (params.environmentId) pending.set("environment", params.environmentId);
+      pending.set("rule_id", params.change.rule_id);
+      created = true;
+    }
+    pending.set("detection_batch", params.batchId);
+    pending.set("rule_name", params.change.rule_name);
+    pending.set("change_type", params.primaryType);
+    pending.set("previous_state", params.change.previous_state || null);
+    pending.set("current_state", params.change.current_state || null);
+    pending.set("diff_summary", params.change.diff_summary || "");
+    pending.set("toml_content", params.change.toml_content || "");
+    pending.set("status", "pending");
+    pending.set("reverted", false);
+    app.save(pending);
+    return created;
+  }
+
+  var data = e.requestInfo().body || {};
   var projectId = data.project_id;
   var direction = data.direction || "elastic_to_git";
   // Accept branch and space overrides from environment
@@ -472,11 +586,25 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
   var spaceOverride = data.space;
   var environmentId = data.environment_id;
   var selectedRuleIds = data.rule_ids; // optional array of rule_id strings for selective export
+  var pruneDeletes = data.prune === true || data.prune === "true";
 
-  // Resolve authenticated user email for audit logging
-  var resolvedUser = "system";
-  try { var _a = e.requestInfo().auth; if (_a) { resolvedUser = _a.getString("email") || _a.get("email") || resolvedUser; } } catch(_x) {}
-  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
+  if (direction !== "elastic_to_git" && direction !== "git_to_elastic" && direction !== "bidirectional") {
+    return e.json(400, { success: false, message: "Invalid direction" });
+  }
+
+  if (!projectId) {
+    return e.json(400, { success: false, message: "project_id is required" });
+  }
+
+  var authRecord = resolveAuthRecord();
+  if (!authRecord) {
+    return e.json(401, { success: false, message: "Authentication required" });
+  }
+
+  var resolvedUser = authRecord.getString("email") || authRecord.get("email") || authRecord.id || "unknown";
+
+  var job = null;
+  var syncErrors = [];
 
   try {
     // If no environment specified, resolve the first one for this project
@@ -489,9 +617,20 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
       } catch (err) {}
     }
 
+    var runningFilter = "project = '" + esc(projectId) + "' && status = 'running'";
+    if (environmentId) runningFilter += " && environment = '" + esc(environmentId) + "'";
+    var runningJobs = e.app.findRecordsByFilter("sync_jobs", runningFilter, "-created", 1, 0);
+    if (runningJobs && runningJobs.length > 0) {
+      return e.json(409, {
+        success: false,
+        message: "A sync is already running for this project/environment",
+        sync_job_id: runningJobs[0].id
+      });
+    }
+
     // Create sync job record
     var collection = e.app.findCollectionByNameOrId("sync_jobs");
-    var job = new Record(collection);
+    job = new Record(collection);
 
     job.set("project", projectId);
     job.set("type", "manual");
@@ -523,7 +662,17 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
     var gitBranch = branchOverride || gitRepo.get("default_branch") || "main";
     var gitRepoUrl = gitRepo.get("url").replace(/\.git$/, "");
 
-    var summary = { exported: 0, imported: 0, changes_detected: 0, pending_created: 0 };
+    var summary = {
+      exported: 0,
+      imported: 0,
+      import_errors: 0,
+      deleted: 0,
+      delete_errors: 0,
+      changes_detected: 0,
+      pending_created: 0,
+      pending_updated: 0,
+      prune_enabled: pruneDeletes
+    };
 
     // Export: Elastic -> Git (via detect-and-queue for review)
     if (direction === "elastic_to_git" || direction === "bidirectional") {
@@ -532,44 +681,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
       // Load baseline snapshots for this project/environment
       var baselineSnapshots = [];
       try {
-        var snapFilter = "project = '" + projectId + "'";
-        if (environmentId) snapFilter += " && environment = '" + environmentId + "'";
-        var snapshots = e.app.findRecordsByFilter("rule_snapshots", snapFilter, "", 5000, 0);
-        for (var si = 0; si < snapshots.length; si++) {
-          var s = snapshots[si];
-          // PocketBase JSVM returns JSON fields as byte arrays - convert to objects
-          var rc = s.get("rule_content");
-          if (rc && typeof rc[0] === "number") {
-            var rcStr = "";
-            for (var bi = 0; bi < rc.length; bi++) rcStr += String.fromCharCode(rc[bi]);
-            try { rcStr = decodeURIComponent(escape(rcStr)); } catch(ue) {}
-            try { rc = JSON.parse(rcStr); } catch (err) {}
-          }
-          var exc = s.get("exceptions") || [];
-          if (exc && typeof exc[0] === "number") {
-            var excStr = "";
-            for (var bi2 = 0; bi2 < exc.length; bi2++) excStr += String.fromCharCode(exc[bi2]);
-            try { excStr = decodeURIComponent(escape(excStr)); } catch(ue) {}
-            try { exc = JSON.parse(excStr); } catch (err) { exc = []; }
-          }
-          var tgs = s.get("tags") || [];
-          if (tgs && typeof tgs[0] === "number") {
-            var tgsStr = "";
-            for (var bi3 = 0; bi3 < tgs.length; bi3++) tgsStr += String.fromCharCode(tgs[bi3]);
-            try { tgsStr = decodeURIComponent(escape(tgsStr)); } catch(ue) {}
-            try { tgs = JSON.parse(tgsStr); } catch (err) { tgs = []; }
-          }
-          baselineSnapshots.push({
-            rule_id: s.get("rule_id"),
-            rule_name: s.get("rule_name"),
-            rule_hash: s.get("rule_hash"),
-            rule_content: rc,
-            exceptions: exc,
-            enabled: s.get("enabled"),
-            severity: s.get("severity"),
-            tags: tgs
-          });
-        }
+        baselineSnapshots = loadRuleSnapshots(e.app, projectId, environmentId);
       } catch (err) {
         console.log("[Sync] Error loading snapshots: " + String(err));
       }
@@ -625,23 +737,18 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
         var primaryType = changeTypes[0];
 
         try {
-          var pending = new Record(pendingCol);
-          pending.set("project", projectId);
-          if (environmentId) pending.set("environment", environmentId);
-          pending.set("detection_batch", batchId);
-          pending.set("rule_id", ch.rule_id);
-          pending.set("rule_name", ch.rule_name);
-          pending.set("change_type", primaryType);
-          pending.set("previous_state", ch.previous_state || null);
-          pending.set("current_state", ch.current_state || null);
-          pending.set("diff_summary", ch.diff_summary || "");
-          pending.set("toml_content", ch.toml_content || "");
-          pending.set("status", "pending");
-          pending.set("reverted", false);
-          e.app.save(pending);
-          summary.pending_created++;
+          var created = upsertPendingChange(e.app, pendingCol, {
+            projectId: projectId,
+            environmentId: environmentId,
+            batchId: batchId,
+            change: ch,
+            primaryType: primaryType
+          });
+          if (created) summary.pending_created++;
+          else summary.pending_updated++;
         } catch (err) {
           console.log("[Sync] Error creating pending change for rule " + ch.rule_id + " (" + ch.rule_name + "): " + String(err));
+          syncErrors.push("Pending upsert failed for " + ch.rule_id);
         }
       }
 
@@ -676,13 +783,42 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
       }
 
       if (detectErrors.length > 0) {
-        job.set("error_message", detectErrors.join("; ").substring(0, 5000));
+        for (var de = 0; de < detectErrors.length; de++) syncErrors.push(detectErrors[de]);
       }
     }
 
     // Import: Git -> Elastic
     if (direction === "git_to_elastic" || direction === "bidirectional") {
       var gitRules = [];
+      var gitFetchOk = false;
+
+      function encodePathSegments(path) {
+        var parts = String(path || "").split("/");
+        var out = [];
+        for (var pi = 0; pi < parts.length; pi++) out.push(encodeURIComponent(parts[pi]));
+        return out.join("/");
+      }
+
+      function parseGitRuleContent(rawContent, formatHint, filePath) {
+        var fmt = (formatHint || "").toLowerCase();
+        if (!fmt) {
+          if (filePath && filePath.endsWith(".toml")) fmt = "toml";
+          else fmt = "json";
+        }
+        if (fmt === "json") return JSON.parse(rawContent);
+        var parseResp = $http.send({
+          url: "http://localhost:8091/parse-rule-content",
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: rawContent, format: fmt, filename: filePath || "" }),
+          timeout: 20
+        });
+        if (parseResp.statusCode !== 200) {
+          throw new Error("Parse service failed for " + (filePath || "rule") + ": " + parseResp.statusCode);
+        }
+        var parsed = JSON.parse(parseResp.raw);
+        return parsed.rule || parsed;
+      }
 
       // Fetch rules from Git
       if (gitProvider === "gitlab") {
@@ -695,7 +831,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
 
           try {
             do {
-              var treeUrl = glImportApi + "/projects/" + glProjPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100&page=" + importTreePage;
+              var treeUrl = glImportApi + "/projects/" + glProjPath + "/repository/tree?ref=" + gitBranch + "&path=" + treePath + "&per_page=100&page=" + importTreePage + "&recursive=true";
               var treeResp = $http.send({
                 url: treeUrl,
                 method: "GET",
@@ -706,7 +842,8 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
               if (treeResp.statusCode === 200) {
                 var files = JSON.parse(treeResp.raw);
                 for (var f = 0; f < files.length; f++) {
-                  if (files[f].name.endsWith(".json")) {
+                  if (files[f].name.endsWith(".json") || files[f].name.endsWith(".toml")) {
+                    var fmt = files[f].name.endsWith(".toml") ? "toml" : "json";
                     var fileUrl = glImportApi + "/projects/" + glProjPath + "/repository/files/" + encodeURIComponent(files[f].path) + "/raw?ref=" + gitBranch;
                     try {
                       var fileResp = $http.send({
@@ -716,7 +853,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
                         timeout: 15
                       });
                       if (fileResp.statusCode === 200) {
-                        gitRules.push({ content: fileResp.raw });
+                        gitRules.push({ content: fileResp.raw, format: fmt, path: files[f].path });
                       }
                     } catch (err) {}
                   }
@@ -724,30 +861,112 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
                 if (files.length < 100) break;
                 importTreePage++;
               } else {
-                break;
+                throw new Error("GitLab tree API returned " + treeResp.statusCode);
               }
             } while (true);
-          } catch (err) {}
+            gitFetchOk = true;
+          } catch (err) {
+            syncErrors.push("GitLab import fetch failed: " + String(err));
+          }
+        } else {
+          syncErrors.push("Invalid GitLab URL format: " + gitRepoUrl);
         }
+      } else if (gitProvider === "github") {
+        var ghImportMatch = gitRepoUrl.match(/github\.com\/([^\/]+)\/(.+)$/);
+        if (ghImportMatch) {
+          var ghOwner = ghImportMatch[1];
+          var ghRepoName = ghImportMatch[2];
+          var ghHeaders = {
+            "Authorization": "token " + gitToken,
+            "Accept": "application/vnd.github.v3+json"
+          };
+          try {
+            var treeApi = "https://api.github.com/repos/" + ghOwner + "/" + ghRepoName + "/git/trees/" + encodeURIComponent(gitBranch) + "?recursive=1";
+            var ghTreeResp = $http.send({
+              url: treeApi,
+              method: "GET",
+              headers: ghHeaders,
+              timeout: 30
+            });
+            if (ghTreeResp.statusCode !== 200) {
+              throw new Error("GitHub tree API returned " + ghTreeResp.statusCode);
+            }
+            var ghTree = JSON.parse(ghTreeResp.raw);
+            var treeItems = ghTree.tree || [];
+            var normalizedPath = (gitPath || "").replace(/^\/+|\/+$/g, "");
+            for (var gi = 0; gi < treeItems.length; gi++) {
+              var item = treeItems[gi];
+              if (!item || item.type !== "blob" || !item.path) continue;
+              if (normalizedPath) {
+                if (!(item.path === normalizedPath || item.path.indexOf(normalizedPath + "/") === 0)) continue;
+              }
+              if (!(item.path.endsWith(".json") || item.path.endsWith(".toml"))) continue;
+              var fileFormat = item.path.endsWith(".toml") ? "toml" : "json";
+              var ghFileUrl = "https://api.github.com/repos/" + ghOwner + "/" + ghRepoName + "/contents/" + encodePathSegments(item.path) + "?ref=" + encodeURIComponent(gitBranch);
+              try {
+                var ghFileResp = $http.send({
+                  url: ghFileUrl,
+                  method: "GET",
+                  headers: ghHeaders,
+                  timeout: 20
+                });
+                if (ghFileResp.statusCode !== 200) continue;
+                var ghFileData = JSON.parse(ghFileResp.raw);
+                var encoded = (ghFileData.content || "").replace(/\n/g, "");
+                if (!encoded) continue;
+                var decoded = $security.base64Decode(encoded);
+                gitRules.push({ content: decoded, format: fileFormat, path: item.path });
+              } catch (err) {}
+            }
+            gitFetchOk = true;
+          } catch (err) {
+            syncErrors.push("GitHub import fetch failed: " + String(err));
+          }
+        } else {
+          syncErrors.push("Invalid GitHub URL format: " + gitRepoUrl);
+        }
+      } else {
+        syncErrors.push("Unsupported git provider for import: " + String(gitProvider));
+      }
+
+      if (!gitFetchOk) {
+        throw new Error("Failed to fetch rule files from Git repository");
       }
 
       // Build map of Git rule IDs for deletion detection
       var gitRuleIds = {};
       for (var g = 0; g < gitRules.length; g++) {
         try {
-          var parsedRule = JSON.parse(gitRules[g].content);
+          var parsedRule = parseGitRuleContent(gitRules[g].content, gitRules[g].format, gitRules[g].path || "");
           gitRuleIds[parsedRule.rule_id] = true;
-        } catch (err) {}
+        } catch (err) {
+          syncErrors.push("Failed to parse git rule " + (gitRules[g].path || g) + ": " + String(err));
+        }
       }
       console.log("Git has " + Object.keys(gitRuleIds).length + " rules");
+
+      if (gitRules.length === 0) {
+        syncErrors.push("Git fetch returned 0 rule files");
+      }
+
+      if (pruneDeletes && gitRules.length === 0) {
+        throw new Error("Refusing to prune Elastic rules because Git returned no rule files");
+      }
+      if (pruneDeletes && Object.keys(gitRuleIds).length === 0) {
+        throw new Error("Refusing to prune Elastic rules because no valid rule IDs were parsed from Git");
+      }
 
       // Import to Elastic
       var importApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules";
 
       for (var r = 0; r < gitRules.length; r++) {
         try {
-          var ruleData = JSON.parse(gitRules[r].content);
-          var ruleIdForImport = ruleData.rule_id;
+          var ruleData = parseGitRuleContent(gitRules[r].content, gitRules[r].format, gitRules[r].path || "");
+          if (!ruleData || !ruleData.rule_id) {
+            summary.import_errors++;
+            syncErrors.push("Skipping file without rule_id: " + (gitRules[r].path || "unknown"));
+            continue;
+          }
 
           // Remove read-only fields
           delete ruleData.id;
@@ -787,89 +1006,117 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
             if (updateResp.statusCode === 200) {
               summary.imported++;
               console.log("Updated rule: " + ruleData.name);
+            } else {
+              summary.import_errors++;
+              syncErrors.push("Failed to update rule " + (ruleData.rule_id || ruleData.name) + " (HTTP " + updateResp.statusCode + ")");
             }
           } else {
+            summary.import_errors++;
+            syncErrors.push("Failed to import rule " + (ruleData.rule_id || ruleData.name) + " (HTTP " + importResp.statusCode + ")");
             console.log("Failed to import rule " + ruleData.name + ": " + importResp.raw);
           }
         } catch (err) {
+          summary.import_errors++;
+          syncErrors.push("Import error: " + String(err));
           console.log("Import error: " + String(err));
         }
       }
 
       // Delete rules from Elastic that are not in Git
-      summary.deleted = summary.deleted || 0;
-      var findBaseUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find";
+      if (pruneDeletes) {
+        var findBaseUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules/_find";
 
-      try {
-        var elasticRulesForDelete = [];
-        var delPage = 1;
-        var delPerPage = 10000;
-        var delTotal = 0;
-
-        do {
-          var findApiUrl = findBaseUrl + "?per_page=" + delPerPage + "&page=" + delPage + "&sort_field=name&sort_order=asc";
-          var findResp = $http.send({
-            url: findApiUrl,
-            method: "GET",
-            headers: {
-              "Authorization": "ApiKey " + apiKey,
-              "kbn-xsrf": "true"
-            },
-            timeout: 60
-          });
-
-          if (findResp.statusCode === 200) {
-            var findData = JSON.parse(findResp.raw);
-            var delPageData = findData.data || [];
-            delTotal = findData.total || 0;
-            console.log("[Delete Check] Page " + delPage + ": got " + delPageData.length + " rules, total=" + delTotal);
-            for (var dp = 0; dp < delPageData.length; dp++) {
-              elasticRulesForDelete.push(delPageData[dp]);
+        try {
+          // Restrict prune scope to rules tracked for this project/environment.
+          var managedRuleIds = {};
+          try {
+            var managedSnapshots = loadRuleSnapshots(e.app, projectId, environmentId);
+            for (var ms = 0; ms < managedSnapshots.length; ms++) {
+              if (managedSnapshots[ms].rule_id) managedRuleIds[managedSnapshots[ms].rule_id] = true;
             }
-            delPage++;
+          } catch (merr) {}
+
+          if (Object.keys(managedRuleIds).length === 0) {
+            summary.prune_skipped = true;
+            syncErrors.push("Prune skipped: no managed snapshot baseline found");
           } else {
-            console.log("[Delete Check] Fetch error on page " + delPage + ": status=" + findResp.statusCode);
-            break;
-          }
-        } while (elasticRulesForDelete.length < delTotal);
+            var elasticRulesForDelete = [];
+            var delPage = 1;
+            var delPerPage = 10000;
+            var delTotal = 0;
 
-        if (elasticRulesForDelete.length > 0) {
-          console.log("Elastic has " + elasticRulesForDelete.length + " rules, checking for deletions...");
+            do {
+              var findApiUrl = findBaseUrl + "?per_page=" + delPerPage + "&page=" + delPage + "&sort_field=name&sort_order=asc";
+              var findResp = $http.send({
+                url: findApiUrl,
+                method: "GET",
+                headers: {
+                  "Authorization": "ApiKey " + apiKey,
+                  "kbn-xsrf": "true"
+                },
+                timeout: 60
+              });
 
-          for (var d = 0; d < elasticRulesForDelete.length; d++) {
-            var elasticRule = elasticRulesForDelete[d];
-            var elasticRuleId = elasticRule.rule_id;
-
-            if (!gitRuleIds[elasticRuleId]) {
-              // Rule doesn't exist in Git, delete from Elastic
-              console.log("Deleting rule not in Git: " + elasticRule.name + " (" + elasticRuleId + ")");
-              var deleteApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules?rule_id=" + encodeURIComponent(elasticRuleId);
-
-              try {
-                var deleteResp = $http.send({
-                  url: deleteApiUrl,
-                  method: "DELETE",
-                  headers: {
-                    "Authorization": "ApiKey " + apiKey,
-                    "kbn-xsrf": "true"
-                  },
-                  timeout: 15
-                });
-
-                if (deleteResp.statusCode === 200) {
-                  summary.deleted++;
-                  console.log("Deleted: " + elasticRule.name);
-                } else {
-                  console.log("Failed to delete rule: " + deleteResp.raw);
+              if (findResp.statusCode === 200) {
+                var findData = JSON.parse(findResp.raw);
+                var delPageData = findData.data || [];
+                delTotal = findData.total || 0;
+                console.log("[Delete Check] Page " + delPage + ": got " + delPageData.length + " rules, total=" + delTotal);
+                for (var dp = 0; dp < delPageData.length; dp++) {
+                  elasticRulesForDelete.push(delPageData[dp]);
                 }
-              } catch (err) {
-                console.log("Delete error: " + String(err));
+                delPage++;
+              } else {
+                throw new Error("Fetch error on page " + delPage + ": status=" + findResp.statusCode);
+              }
+            } while (elasticRulesForDelete.length < delTotal);
+
+            if (elasticRulesForDelete.length > 0) {
+              console.log("Elastic has " + elasticRulesForDelete.length + " rules, checking for deletions...");
+
+              for (var d = 0; d < elasticRulesForDelete.length; d++) {
+                var elasticRule = elasticRulesForDelete[d];
+                var elasticRuleId = elasticRule.rule_id;
+
+                if (managedRuleIds[elasticRuleId] && !gitRuleIds[elasticRuleId]) {
+                  console.log("Deleting managed rule not in Git: " + elasticRule.name + " (" + elasticRuleId + ")");
+                  var deleteApiUrl = elasticUrl + (elasticSpace && elasticSpace !== "default" ? "/s/" + elasticSpace : "") + "/api/detection_engine/rules?rule_id=" + encodeURIComponent(elasticRuleId);
+
+                  try {
+                    var deleteResp = $http.send({
+                      url: deleteApiUrl,
+                      method: "DELETE",
+                      headers: {
+                        "Authorization": "ApiKey " + apiKey,
+                        "kbn-xsrf": "true"
+                      },
+                      timeout: 15
+                    });
+
+                    if (deleteResp.statusCode === 200) {
+                      summary.deleted++;
+                      console.log("Deleted: " + elasticRule.name);
+                    } else {
+                      summary.delete_errors++;
+                      syncErrors.push("Failed to delete managed rule " + elasticRuleId + " (HTTP " + deleteResp.statusCode + ")");
+                      console.log("Failed to delete rule: " + deleteResp.raw);
+                    }
+                  } catch (err) {
+                    summary.delete_errors++;
+                    syncErrors.push("Delete error for " + elasticRuleId + ": " + String(err));
+                    console.log("Delete error: " + String(err));
+                  }
+                }
               }
             }
           }
+        } catch (err) {
+          summary.delete_errors++;
+          syncErrors.push("Error fetching Elastic rules for prune: " + String(err));
+          console.log("Error fetching Elastic rules for deletion: " + String(err));
         }
-      } catch (err) {
-        console.log("Error fetching Elastic rules for deletion: " + String(err));
+      } else {
+        summary.prune_skipped = true;
       }
     }
 
@@ -877,13 +1124,19 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
     job.set("status", "completed");
     job.set("completed_at", new Date().toISOString());
     job.set("changes_summary", JSON.stringify(summary));
+    if (syncErrors.length > 0) {
+      job.set("error_message", syncErrors.join("; ").substring(0, 5000));
+    }
     e.app.save(job);
 
     var msgParts = [];
     if (summary.changes_detected) msgParts.push(summary.changes_detected + " changes detected");
     if (summary.pending_created) msgParts.push(summary.pending_created + " queued for review");
+    if (summary.pending_updated) msgParts.push(summary.pending_updated + " updated in review queue");
     if (summary.imported) msgParts.push(summary.imported + " imported");
+    if (summary.deleted) msgParts.push(summary.deleted + " pruned from Elastic");
     var msg = msgParts.length > 0 ? msgParts.join(", ") : "No changes detected";
+    if (syncErrors.length > 0) msg += " (with warnings)";
 
     // Audit log
     logAudit(e.app, {
@@ -894,8 +1147,8 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
       resource_name: project.get("name"),
       project: projectId,
       details: { direction: direction, rule_count: selectedRuleIds ? selectedRuleIds.length : "all", summary: summary },
-      status: job.get("status") === "failed" ? "error" : "success",
-      error_message: job.get("error_message") || ""
+      status: syncErrors.length > 0 ? "error" : "success",
+      error_message: syncErrors.length > 0 ? syncErrors.join("; ").substring(0, 2000) : ""
     });
 
     return e.json(200, {
@@ -906,7 +1159,29 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
     });
 
   } catch (err) {
-    return e.json(500, { success: false, message: String(err) });
+    if (job) {
+      try {
+        job.set("status", "failed");
+        job.set("completed_at", new Date().toISOString());
+        job.set("error_message", String(err).substring(0, 5000));
+        e.app.save(job);
+      } catch (_saveErr) {}
+
+      try {
+        logAudit(e.app, {
+          user: resolvedUser,
+          action: "sync_triggered",
+          resource_type: "sync_job",
+          resource_id: job.id,
+          resource_name: projectId,
+          project: projectId,
+          details: { direction: direction },
+          status: "error",
+          error_message: String(err).substring(0, 2000)
+        });
+      } catch (_auditErr) {}
+    }
+    return e.json(500, { success: false, message: String(err), sync_job_id: job ? job.id : "" });
   }
 });
 
@@ -3295,6 +3570,91 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
     }
   }
 
+  function esc(v) {
+    return String(v || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  }
+
+  function loadRuleSnapshots(app, projectId, environmentId) {
+    var out = [];
+    var filter = "project = '" + esc(projectId) + "'";
+    if (environmentId) filter += " && environment = '" + esc(environmentId) + "'";
+    var pageSize = 1000;
+    var offset = 0;
+
+    while (true) {
+      var snaps = app.findRecordsByFilter("rule_snapshots", filter, "", pageSize, offset);
+      if (!snaps || snaps.length === 0) break;
+      for (var si = 0; si < snaps.length; si++) {
+        var s = snaps[si];
+        var rc = s.get("rule_content");
+        if (rc && typeof rc[0] === "number") {
+          var rcStr = "";
+          for (var bi = 0; bi < rc.length; bi++) rcStr += String.fromCharCode(rc[bi]);
+          try { rcStr = decodeURIComponent(escape(rcStr)); } catch(ue) {}
+          try { rc = JSON.parse(rcStr); } catch (err) {}
+        }
+        var exc = s.get("exceptions") || [];
+        if (exc && typeof exc[0] === "number") {
+          var excStr = "";
+          for (var bi2 = 0; bi2 < exc.length; bi2++) excStr += String.fromCharCode(exc[bi2]);
+          try { excStr = decodeURIComponent(escape(excStr)); } catch(ue) {}
+          try { exc = JSON.parse(excStr); } catch (err) { exc = []; }
+        }
+        var tgs = s.get("tags") || [];
+        if (tgs && typeof tgs[0] === "number") {
+          var tgsStr = "";
+          for (var bi3 = 0; bi3 < tgs.length; bi3++) tgsStr += String.fromCharCode(tgs[bi3]);
+          try { tgsStr = decodeURIComponent(escape(tgsStr)); } catch(ue) {}
+          try { tgs = JSON.parse(tgsStr); } catch (err) { tgs = []; }
+        }
+        out.push({
+          rule_id: s.get("rule_id"),
+          rule_name: s.get("rule_name"),
+          rule_hash: s.get("rule_hash"),
+          rule_content: rc,
+          exceptions: exc,
+          enabled: s.get("enabled"),
+          severity: s.get("severity"),
+          tags: tgs
+        });
+      }
+      if (snaps.length < pageSize) break;
+      offset += pageSize;
+    }
+    return out;
+  }
+
+  function findPendingChange(app, projectId, environmentId, ruleId) {
+    var filter = "project = '" + esc(projectId) + "' && status = 'pending' && rule_id = '" + esc(ruleId) + "'";
+    if (environmentId) filter += " && environment = '" + esc(environmentId) + "'";
+    var existing = app.findRecordsByFilter("pending_changes", filter, "-created", 1, 0);
+    if (existing && existing.length > 0) return existing[0];
+    return null;
+  }
+
+  function upsertPendingChange(app, pendingCol, params) {
+    var pending = findPendingChange(app, params.projectId, params.environmentId, params.change.rule_id);
+    var created = false;
+    if (!pending) {
+      pending = new Record(pendingCol);
+      pending.set("project", params.projectId);
+      pending.set("environment", params.environmentId);
+      pending.set("rule_id", params.change.rule_id);
+      created = true;
+    }
+    pending.set("detection_batch", params.batchId);
+    pending.set("rule_name", params.change.rule_name);
+    pending.set("change_type", params.primaryType);
+    pending.set("previous_state", params.change.previous_state || null);
+    pending.set("current_state", params.change.current_state || null);
+    pending.set("diff_summary", params.change.diff_summary || "");
+    pending.set("toml_content", params.change.toml_content || "");
+    pending.set("status", "pending");
+    pending.set("reverted", false);
+    app.save(pending);
+    return created;
+  }
+
   console.log("[Auto-Sync] Checking for scheduled change detections...");
 
   try {
@@ -3355,6 +3715,20 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
 
         if (!needsCheck) continue;
 
+        try {
+          var running = $app.findRecordsByFilter(
+            "sync_jobs",
+            "project = '" + esc(project.id) + "' && environment = '" + esc(env.id) + "' && status = 'running'",
+            "-created",
+            1,
+            0
+          );
+          if (running && running.length > 0) {
+            console.log("[Auto-Sync] Skipping " + project.get("name") + " " + envName + " because job " + running[0].id + " is still running");
+            continue;
+          }
+        } catch (_runningErr) {}
+
         console.log("[Auto-Sync] Running change detection for " + project.get("name") + " env " + envName);
 
         // Create sync job record
@@ -3386,48 +3760,7 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
           // Load baseline snapshots
           var baselineSnapshots = [];
           try {
-            var snapshots = $app.findRecordsByFilter(
-              "rule_snapshots",
-              "project = '" + project.id + "' && environment = '" + env.id + "'",
-              "",
-              5000,
-              0
-            );
-            for (var si = 0; si < snapshots.length; si++) {
-              var s = snapshots[si];
-              // PocketBase JSVM returns JSON fields as byte arrays - convert to objects
-              var rc = s.get("rule_content");
-              if (rc && typeof rc[0] === "number") {
-                var rcStr = "";
-                for (var bi = 0; bi < rc.length; bi++) rcStr += String.fromCharCode(rc[bi]);
-                try { rcStr = decodeURIComponent(escape(rcStr)); } catch(ue) {}
-                try { rc = JSON.parse(rcStr); } catch (err) {}
-              }
-              var exc = s.get("exceptions") || [];
-              if (exc && typeof exc[0] === "number") {
-                var excStr = "";
-                for (var bi2 = 0; bi2 < exc.length; bi2++) excStr += String.fromCharCode(exc[bi2]);
-                try { excStr = decodeURIComponent(escape(excStr)); } catch(ue) {}
-                try { exc = JSON.parse(excStr); } catch (err) { exc = []; }
-              }
-              var tgs = s.get("tags") || [];
-              if (tgs && typeof tgs[0] === "number") {
-                var tgsStr = "";
-                for (var bi3 = 0; bi3 < tgs.length; bi3++) tgsStr += String.fromCharCode(tgs[bi3]);
-                try { tgsStr = decodeURIComponent(escape(tgsStr)); } catch(ue) {}
-                try { tgs = JSON.parse(tgsStr); } catch (err) { tgs = []; }
-              }
-              baselineSnapshots.push({
-                rule_id: s.get("rule_id"),
-                rule_name: s.get("rule_name"),
-                rule_hash: s.get("rule_hash"),
-                rule_content: rc,
-                exceptions: exc,
-                enabled: s.get("enabled"),
-                severity: s.get("severity"),
-                tags: tgs
-              });
-            }
+            baselineSnapshots = loadRuleSnapshots($app, project.id, env.id);
           } catch (err) {
             console.log("[Auto-Sync] Error loading snapshots: " + String(err));
           }
@@ -3460,6 +3793,7 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
           var batchId = now.toISOString().replace(/[:.]/g, "-") + "-" + project.id.substring(0, 8);
           var pendingCol = $app.findCollectionByNameOrId("pending_changes");
           var changesCreated = 0;
+          var changesUpdated = 0;
 
           for (var ci = 0; ci < changes.length; ci++) {
             var ch = changes[ci];
@@ -3467,21 +3801,15 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
             var primaryType = changeTypes[0];
 
             try {
-              var pending = new Record(pendingCol);
-              pending.set("project", project.id);
-              pending.set("environment", env.id);
-              pending.set("detection_batch", batchId);
-              pending.set("rule_id", ch.rule_id);
-              pending.set("rule_name", ch.rule_name);
-              pending.set("change_type", primaryType);
-              pending.set("previous_state", ch.previous_state || null);
-              pending.set("current_state", ch.current_state || null);
-              pending.set("diff_summary", ch.diff_summary || "");
-              pending.set("toml_content", ch.toml_content || "");
-              pending.set("status", "pending");
-              pending.set("reverted", false);
-              $app.save(pending);
-              changesCreated++;
+              var created = upsertPendingChange($app, pendingCol, {
+                projectId: project.id,
+                environmentId: env.id,
+                batchId: batchId,
+                change: ch,
+                primaryType: primaryType
+              });
+              if (created) changesCreated++;
+              else changesUpdated++;
             } catch (err) {
               console.log("[Auto-Sync] Error creating pending change for rule " + ch.rule_id + " (" + ch.rule_name + "): " + String(err));
             }
@@ -3491,6 +3819,7 @@ cronAdd("auto_sync_scheduler", "* * * * *", function() {
           var summary = {
             changes_detected: changes.length,
             pending_created: changesCreated,
+            pending_updated: changesUpdated,
             errors: errors.length
           };
           job.set("status", "completed");

@@ -72,6 +72,12 @@ class ComputeHashRequest(BaseModel):
     rule: dict
 
 
+class ParseRuleContentRequest(BaseModel):
+    content: str
+    format: str = ""
+    filename: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -303,6 +309,45 @@ async def api_compute_hash(req: ComputeHashRequest):
         return {"rule_hash": rule_hash}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/parse-rule-content")
+async def api_parse_rule_content(req: ParseRuleContentRequest):
+    """
+    Parse a rule file payload and return the normalized rule JSON object.
+    Supports JSON and TOML (detection-rules style with [rule] section).
+    """
+    fmt = (req.format or "").strip().lower()
+    if not fmt and req.filename:
+        if req.filename.endswith(".toml"):
+            fmt = "toml"
+        elif req.filename.endswith(".json"):
+            fmt = "json"
+    if not fmt:
+        fmt = "json"
+
+    try:
+        if fmt == "json":
+            parsed = json.loads(req.content)
+        elif fmt == "toml":
+            try:
+                import tomllib  # py3.11+
+                parsed = tomllib.loads(req.content)
+            except Exception:
+                import toml
+                parsed = toml.loads(req.content)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {fmt}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Parse failed: {str(e)}")
+
+    rule = parsed.get("rule", parsed) if isinstance(parsed, dict) else parsed
+    if not isinstance(rule, dict):
+        raise HTTPException(status_code=400, detail="Parsed content does not contain a rule object")
+
+    return {"rule": rule}
 
 
 # ---------------------------------------------------------------------------
