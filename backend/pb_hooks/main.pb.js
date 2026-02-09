@@ -446,7 +446,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
     try {
       var user = params.user || "system";
       if (user === "system") { try { var _a = e.requestInfo().auth; if (_a) { user = _a.getString("email") || _a.get("email") || user; } } catch(_x) {} }
-      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
+      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
       var col = app.findCollectionByNameOrId("audit_logs");
       var rec = new Record(col);
       rec.set("user", user);
@@ -476,7 +476,7 @@ routerAdd("POST", "/api/sync/trigger", function(e) {
   // Resolve authenticated user email for audit logging
   var resolvedUser = "system";
   try { var _a = e.requestInfo().auth; if (_a) { resolvedUser = _a.getString("email") || _a.get("email") || resolvedUser; } } catch(_x) {}
-  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
+  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
 
   try {
     // If no environment specified, resolve the first one for this project
@@ -1024,7 +1024,7 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
     try {
       var user = params.user || "system";
       if (user === "system") { try { var _a = e.requestInfo().auth; if (_a) { user = _a.getString("email") || _a.get("email") || user; } } catch(_x) {} }
-      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
+      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
       var col = app.findCollectionByNameOrId("audit_logs");
       var rec = new Record(col);
       rec.set("user", user);
@@ -1051,7 +1051,7 @@ routerAdd("POST", "/api/merge-request/create", function(e) {
   // Resolve authenticated user email for audit logging
   var resolvedUser = "system";
   try { var _a = e.requestInfo().auth; if (_a) { resolvedUser = _a.getString("email") || _a.get("email") || resolvedUser; } } catch(_x) {}
-  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
+  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
 
   try {
     // Get project and git repository
@@ -1481,7 +1481,7 @@ routerAdd("POST", "/api/review/approve", function(e) {
     try {
       var user = params.user || "system";
       if (user === "system") { try { var _a = e.requestInfo().auth; if (_a) { user = _a.getString("email") || _a.get("email") || user; } } catch(_x) {} }
-      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
+      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
       var col = app.findCollectionByNameOrId("audit_logs");
       var rec = new Record(col);
       rec.set("user", user);
@@ -1694,7 +1694,7 @@ routerAdd("POST", "/api/review/approve", function(e) {
   var changeId = data.change_id;
   var reviewedBy = data.reviewed_by || "unknown";
   try { var _a = e.requestInfo().auth; if (_a) { reviewedBy = _a.getString("email") || _a.get("email") || reviewedBy; } } catch(_x) {}
-  if (reviewedBy === "unknown") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { reviewedBy = _r.getString("email") || _r.get("email") || reviewedBy; } } } catch(_x) {} }
+  if (reviewedBy === "unknown") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { reviewedBy = _r.getString("email") || _r.get("email") || reviewedBy; } } } catch(_x) {} }
 
   try {
     var change = e.app.findRecordById("pending_changes", changeId);
@@ -1862,7 +1862,7 @@ routerAdd("POST", "/api/review/reject", function(e) {
     try {
       var user = params.user || "system";
       if (user === "system") { try { var _a = e.requestInfo().auth; if (_a) { user = _a.getString("email") || _a.get("email") || user; } } catch(_x) {} }
-      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
+      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
       var col = app.findCollectionByNameOrId("audit_logs");
       var rec = new Record(col);
       rec.set("user", user);
@@ -2004,7 +2004,7 @@ routerAdd("POST", "/api/review/reject", function(e) {
   var changeId = data.change_id;
   var reviewedBy = data.reviewed_by || "unknown";
   try { var _a = e.requestInfo().auth; if (_a) { reviewedBy = _a.getString("email") || _a.get("email") || reviewedBy; } } catch(_x) {}
-  if (reviewedBy === "unknown") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { reviewedBy = _r.getString("email") || _r.get("email") || reviewedBy; } } } catch(_x) {} }
+  if (reviewedBy === "unknown") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { reviewedBy = _r.getString("email") || _r.get("email") || reviewedBy; } } } catch(_x) {} }
 
   try {
     var change = e.app.findRecordById("pending_changes", changeId);
@@ -2289,7 +2289,7 @@ routerAdd("POST", "/api/review/bulk-approve", function(e) {
     try {
       var user = params.user || "system";
       if (user === "system") { try { var _a = e.requestInfo().auth; if (_a) { user = _a.getString("email") || _a.get("email") || user; } } catch(_x) {} }
-      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
+      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
       var col = app.findCollectionByNameOrId("audit_logs");
       var rec = new Record(col);
       rec.set("user", user);
@@ -2468,7 +2468,7 @@ routerAdd("POST", "/api/review/bulk-approve", function(e) {
   var changeIds = data.change_ids;
   var reviewedBy = data.reviewed_by || "unknown";
   try { var _a = e.requestInfo().auth; if (_a) { reviewedBy = _a.getString("email") || _a.get("email") || reviewedBy; } } catch(_x) {}
-  if (reviewedBy === "unknown") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { reviewedBy = _r.getString("email") || _r.get("email") || reviewedBy; } } } catch(_x) {} }
+  if (reviewedBy === "unknown") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { reviewedBy = _r.getString("email") || _r.get("email") || reviewedBy; } } } catch(_x) {} }
 
   console.log("[Bulk-Approve] batch_id=" + batchId + ", changeIds=" + JSON.stringify(changeIds));
 
@@ -2637,7 +2637,7 @@ routerAdd("POST", "/api/review/bulk-reject", function(e) {
     try {
       var user = params.user || "system";
       if (user === "system") { try { var _a = e.requestInfo().auth; if (_a) { user = _a.getString("email") || _a.get("email") || user; } } catch(_x) {} }
-      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
+      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
       var col = app.findCollectionByNameOrId("audit_logs");
       var rec = new Record(col);
       rec.set("user", user);
@@ -2722,7 +2722,7 @@ routerAdd("POST", "/api/review/bulk-reject", function(e) {
   var changeIds = data.change_ids;
   var reviewedBy = data.reviewed_by || "unknown";
   try { var _a = e.requestInfo().auth; if (_a) { reviewedBy = _a.getString("email") || _a.get("email") || reviewedBy; } } catch(_x) {}
-  if (reviewedBy === "unknown") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { reviewedBy = _r.getString("email") || _r.get("email") || reviewedBy; } } } catch(_x) {} }
+  if (reviewedBy === "unknown") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { reviewedBy = _r.getString("email") || _r.get("email") || reviewedBy; } } } catch(_x) {} }
 
   var filter = "status = 'pending'";
   if (batchId) filter += " && detection_batch = '" + batchId + "'";
@@ -3104,7 +3104,7 @@ routerAdd("POST", "/api/review/init-baseline", function(e) {
     try {
       var user = params.user || "system";
       if (user === "system") { try { var _a = e.requestInfo().auth; if (_a) { user = _a.getString("email") || _a.get("email") || user; } } catch(_x) {} }
-      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
+      if (user === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { user = _r.getString("email") || _r.get("email") || user; } } } catch(_x) {} }
       var col = app.findCollectionByNameOrId("audit_logs");
       var rec = new Record(col);
       rec.set("user", user);
@@ -3128,7 +3128,7 @@ routerAdd("POST", "/api/review/init-baseline", function(e) {
   // Resolve authenticated user email for audit logging
   var resolvedUser = "system";
   try { var _a = e.requestInfo().auth; if (_a) { resolvedUser = _a.getString("email") || _a.get("email") || resolvedUser; } } catch(_x) {}
-  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, ""); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
+  if (resolvedUser === "system") { try { var _h = e.request.header.get("Authorization"); if (_h) { if (_h.indexOf("Bearer ") === 0) _h = _h.substring(7); var _r = e.app.findAuthRecordByToken(_h, "auth"); if (_r) { resolvedUser = _r.getString("email") || _r.get("email") || resolvedUser; } } } catch(_x) {} }
 
   try {
     var project = e.app.findRecordById("projects", projectId);
