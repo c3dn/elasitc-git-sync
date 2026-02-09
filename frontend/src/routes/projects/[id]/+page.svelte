@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { pb, apiFetch } from '$lib/pocketbase';
@@ -28,6 +28,18 @@
 		FolderCode
 	} from 'lucide-svelte';
 	import type { ProjectExpanded, SyncJob, PendingChange } from '$types';
+	import {
+		asCount,
+		formatSyncSummary,
+		getSummaryWarningCount,
+		getUnifiedSyncBadgeClasses,
+		getUnifiedSyncLabel,
+		getUnifiedSyncUiState,
+		isExportDirection,
+		isImportDirection,
+		parseSyncSummary,
+		type SyncSummaryData
+	} from '$lib/utils/sync-ui';
 	import RuleSelectionModal from '$lib/components/RuleSelectionModal.svelte';
 	import { AlertTriangle, Eye, ShieldOff, Shield, ToggleLeft, ToggleRight, Tag, Search as SearchIcon, Edit3, Plus, Minus } from 'lucide-svelte';
 
@@ -53,6 +65,11 @@
 	let syncingProd = $state(false);
 	let creatingMR = $state(false);
 	let showRuleSelection = $state(false);
+	let retryingSyncJobId = $state('');
+	let pollingRunningJobs = $state(false);
+
+	let syncPollTimer: ReturnType<typeof setInterval> | null = null;
+	let syncPollInFlight = false;
 
 	// Metrics
 	let testRuleCount = $state(0);
@@ -70,6 +87,13 @@
 
 	onMount(async () => {
 		await loadAll();
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		updateSyncPolling();
+	});
+
+	onDestroy(() => {
+		stopSyncPolling();
+		document.removeEventListener('visibilitychange', handleVisibilityChange);
 	});
 
 	async function loadAll() {
@@ -116,6 +140,52 @@
 			syncJobs = result.items;
 		} catch (err: any) {
 			console.error('Failed to load sync jobs:', err);
+		} finally {
+			updateSyncPolling();
+		}
+	}
+
+	function hasRunningSyncJobs(): boolean {
+		return syncJobs.some((job) => job.status === 'running' || job.status === 'pending');
+	}
+
+	function startSyncPolling() {
+		if (syncPollTimer) return;
+		pollingRunningJobs = true;
+		syncPollTimer = setInterval(() => {
+			void refreshRunningSyncData();
+		}, 3000);
+	}
+
+	function stopSyncPolling() {
+		if (syncPollTimer) {
+			clearInterval(syncPollTimer);
+			syncPollTimer = null;
+		}
+		pollingRunningJobs = false;
+	}
+
+	function updateSyncPolling() {
+		if (hasRunningSyncJobs()) {
+			startSyncPolling();
+		} else {
+			stopSyncPolling();
+		}
+	}
+
+	async function refreshRunningSyncData() {
+		if (document.hidden || syncPollInFlight || !hasRunningSyncJobs()) return;
+		syncPollInFlight = true;
+		try {
+			await Promise.all([loadSyncJobs(), loadMetrics(), loadPendingChanges()]);
+		} finally {
+			syncPollInFlight = false;
+		}
+	}
+
+	function handleVisibilityChange() {
+		if (!document.hidden && hasRunningSyncJobs()) {
+			void refreshRunningSyncData();
 		}
 	}
 
@@ -317,21 +387,114 @@
 		}
 	}
 
-	function getStatusColor(status: string): string {
-		switch (status) {
-			case 'completed': return 'text-green-600';
-			case 'failed': return 'text-red-600';
-			case 'running': return 'text-blue-600';
-			default: return 'text-gray-600 dark:text-gray-400';
+	function getStatusColor(job: SyncJob): string {
+		const state = getUnifiedSyncUiState(job);
+		switch (state) {
+			case 'success': return 'text-green-700 dark:text-green-400';
+			case 'partial': return 'text-amber-700 dark:text-amber-400';
+			case 'failed': return 'text-red-700 dark:text-red-400';
+			case 'in_progress': return 'text-blue-700 dark:text-blue-400';
+			case 'conflict': return 'text-orange-700 dark:text-orange-400';
+			default: return 'text-gray-700 dark:text-gray-300';
 		}
 	}
 
-	function getStatusBg(status: string): string {
-		switch (status) {
-			case 'completed': return 'bg-green-100';
-			case 'failed': return 'bg-red-100';
-			case 'running': return 'bg-blue-100';
+	function getStatusBg(job: SyncJob): string {
+		const state = getUnifiedSyncUiState(job);
+		switch (state) {
+			case 'success': return 'bg-green-100 dark:bg-green-900/30';
+			case 'partial': return 'bg-amber-100 dark:bg-amber-900/30';
+			case 'failed': return 'bg-red-100 dark:bg-red-900/30';
+			case 'in_progress': return 'bg-blue-100 dark:bg-blue-900/30';
+			case 'conflict': return 'bg-orange-100 dark:bg-orange-900/30';
 			default: return 'bg-gray-100 dark:bg-gray-800';
+		}
+	}
+
+	function getJobEnvironment(job: SyncJob): Environment | undefined {
+		if (!job.environment) return undefined;
+		return environments.find((env) => env.id === job.environment);
+	}
+
+	function getJobElasticRulesUrl(job: SyncJob): string {
+		const baseUrl = project?.expand?.elastic_instance?.url;
+		if (!baseUrl) return '';
+		const env = getJobEnvironment(job);
+		const fallbackSpace = env?.name === 'production' ? prodEnv?.elastic_space : testEnv?.elastic_space;
+		const space = env?.elastic_space || fallbackSpace || project?.elastic_space || 'default';
+		if (space && space !== 'default') {
+			return `${baseUrl.replace(/\/$/, '')}/s/${space}/app/security/rules`;
+		}
+		return `${baseUrl.replace(/\/$/, '')}/app/security/rules`;
+	}
+
+	function getJobGitRepoUrl(): string {
+		return stripGitSuffix(project?.expand?.git_repository?.url || '');
+	}
+
+	function getErrorHint(errorMessage: string): string {
+		const msg = errorMessage.toLowerCase();
+		if (/unauthorized|forbidden|401|403|invalid api key|authentication/.test(msg)) {
+			return 'Authentication issue: verify Elastic or Git credentials.';
+		}
+		if (/connection|timeout|ssl|network|timed out|max retries|dns/.test(msg)) {
+			return 'Network issue: check service reachability and TLS settings.';
+		}
+		if (/parse|toml|json|invalid rule|without rule_id|unsupported format/.test(msg)) {
+			return 'Rule format issue: validate TOML/JSON and required fields.';
+		}
+		if (/gitlab|github|repository|branch|merge request|git /.test(msg)) {
+			return 'Git issue: verify repository access, branch, and token permissions.';
+		}
+		if (/detection_engine|kibana|elastic|rule/.test(msg)) {
+			return 'Elastic issue: check API permissions and rule payload compatibility.';
+		}
+		return 'Review details and retry after resolving the underlying issue.';
+	}
+
+	function getWarningPreview(job: SyncJob): string {
+		if (!job.error_message) return '';
+		const first = job.error_message.split(';').map(s => s.trim()).find(Boolean) || '';
+		return first.length > 140 ? `${first.slice(0, 140)}...` : first;
+	}
+
+	async function retrySyncJob(job: SyncJob) {
+		try {
+			retryingSyncJobId = job.id;
+			error = '';
+			successMessage = '';
+
+			const env = getJobEnvironment(job);
+			const fallbackEnv = job.direction === 'git_to_elastic' ? prodEnv : testEnv;
+			const effectiveEnv = env || fallbackEnv;
+
+			const payload: Record<string, any> = {
+				project_id: projectId,
+				direction: job.direction
+			};
+			if (effectiveEnv) {
+				payload.environment_id = effectiveEnv.id;
+				payload.branch = effectiveEnv.git_branch;
+				payload.space = effectiveEnv.elastic_space;
+			}
+
+			const response = await apiFetch(`${pb.baseUrl}/api/sync/trigger`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			const result = await response.json();
+
+			if (result.success) {
+				successMessage = `Retry started: ${result.message}`;
+				await Promise.all([loadSyncJobs(), loadMetrics(), loadPendingChanges()]);
+			} else {
+				error = result.message || 'Failed to retry sync';
+			}
+		} catch (err: any) {
+			error = err.message || 'Failed to retry sync';
+		} finally {
+			retryingSyncJobId = '';
 		}
 	}
 
@@ -341,79 +504,6 @@
 		label: string;
 		state: TimelineState;
 		count?: number;
-	}
-
-	type SyncSummaryData = Record<string, unknown>;
-
-	function parseSyncSummary(rawSummary: SyncJob['changes_summary']): SyncSummaryData {
-		if (!rawSummary) return {};
-		if (typeof rawSummary === 'string') {
-			try {
-				const parsed = JSON.parse(rawSummary);
-				return parsed && typeof parsed === 'object' ? parsed as SyncSummaryData : {};
-			} catch {
-				return {};
-			}
-		}
-		return typeof rawSummary === 'object' ? rawSummary as SyncSummaryData : {};
-	}
-
-	function asCount(value: unknown): number {
-		const num = Number(value);
-		return Number.isFinite(num) && num > 0 ? num : 0;
-	}
-
-	function isExportDirection(direction: SyncJob['direction']): boolean {
-		return direction === 'elastic_to_git' || direction === 'bidirectional';
-	}
-
-	function isImportDirection(direction: SyncJob['direction']): boolean {
-		return direction === 'git_to_elastic' || direction === 'bidirectional';
-	}
-
-	function getSummaryWarningCount(summary: SyncSummaryData): number {
-		return asCount(summary.import_errors) + asCount(summary.delete_errors) + asCount(summary.errors);
-	}
-
-	function formatSyncSummary(job: SyncJob, summary: SyncSummaryData): string {
-		const parts: string[] = [];
-		const changesDetected = asCount(summary.changes_detected);
-		const pendingCreated = asCount(summary.pending_created);
-		const pendingUpdated = asCount(summary.pending_updated);
-		const exported = asCount(summary.exported);
-		const imported = asCount(summary.imported);
-		const deleted = asCount(summary.deleted);
-		const warningCount = getSummaryWarningCount(summary);
-
-		if (changesDetected > 0) {
-			parts.push(`${changesDetected} ${changesDetected === 1 ? 'change' : 'changes'} detected`);
-		}
-		if (pendingCreated > 0) {
-			parts.push(`${pendingCreated} pending review`);
-		}
-		if (pendingUpdated > 0) {
-			parts.push(`${pendingUpdated} review item${pendingUpdated === 1 ? '' : 's'} updated`);
-		}
-		if (exported > 0) {
-			parts.push(`${exported} exported`);
-		}
-		if (imported > 0) {
-			parts.push(`${imported} imported`);
-		}
-		if (deleted > 0) {
-			parts.push(`${deleted} deleted`);
-		}
-		if (warningCount > 0) {
-			parts.push(`${warningCount} ${warningCount === 1 ? 'warning' : 'warnings'}`);
-		}
-
-		if (parts.length === 0) {
-			if (job.status === 'failed') return 'Sync failed before processing finished';
-			if (job.status === 'running') return 'Sync in progress';
-			return 'No changes';
-		}
-
-		return parts.join(', ');
 	}
 
 	function getSyncTimeline(job: SyncJob, summary: SyncSummaryData): TimelineStep[] {
@@ -524,12 +614,6 @@
 		}
 	}
 
-	function getWarningPreview(job: SyncJob): string {
-		if (!job.error_message || job.status === 'failed') return '';
-		const first = job.error_message.split(';').map(s => s.trim()).find(Boolean) || '';
-		return first.length > 140 ? `${first.slice(0, 140)}...` : first;
-	}
-
 	function formatRelativeTime(dateStr: string): string {
 		if (!dateStr) return 'Never';
 		const date = new Date(dateStr);
@@ -585,7 +669,7 @@
 					Edit
 				</a>
 				<button
-					on:click={deleteProject}
+					onclick={deleteProject}
 					class="inline-flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg transition-colors"
 				>
 					<Trash2 class="w-4 h-4" />
@@ -701,7 +785,7 @@
 								</div>
 
 								<button
-									on:click={openRuleSelection}
+									onclick={openRuleSelection}
 									disabled={syncingTest}
 									class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
 								>
@@ -753,7 +837,7 @@
 									</div>
 
 									<button
-										on:click={openRuleSelection}
+										onclick={openRuleSelection}
 										disabled={syncingTest}
 										class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
 									>
@@ -804,7 +888,7 @@
 									</div>
 
 									<button
-										on:click={createMergeRequest}
+										onclick={createMergeRequest}
 										disabled={creatingMR}
 										class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
 									>
@@ -869,7 +953,7 @@
 									</div>
 
 									<button
-										on:click={syncGitToProd}
+										onclick={syncGitToProd}
 										disabled={syncingProd}
 										class="btn w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 hover:shadow-md transition-all disabled:opacity-50 text-sm font-medium"
 									>
@@ -951,9 +1035,18 @@
 		<!-- Recent Syncs - Full Width -->
 		<div class="card animate-fade-in" style="animation-delay: 200ms; opacity: 0;">
 			<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Syncs</h2>
+				<div class="flex items-center gap-3">
+					<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Syncs</h2>
+					{#if pollingRunningJobs}
+						<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+							<Loader class="h-3 w-3 animate-spin" />
+							Live
+						</span>
+					{/if}
+				</div>
 				<button
-					on:click={loadSyncJobs}
+					onclick={loadSyncJobs}
+					aria-label="Refresh sync jobs"
 					class="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
 				>
 					<RefreshCw class="w-4 h-4" />
@@ -967,22 +1060,27 @@
 					<p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Start by exporting rules from your environment.</p>
 				</div>
 			{:else}
-					<div class="divide-y divide-gray-100 dark:divide-gray-800">
-						{#each syncJobs.slice(0, 8) as job}
-							{@const summary = parseSyncSummary(job.changes_summary)}
-							{@const timeline = getSyncTimeline(job, summary)}
-							{@const warningPreview = getWarningPreview(job)}
-							<div class="flex items-start justify-between px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-								<div class="flex items-center gap-3 min-w-0">
-									<div class="p-1.5 rounded-lg {getStatusBg(job.status)}">
-										{#if job.status === 'completed'}
-											<CheckCircle class="w-4 h-4 text-green-600" />
-									{:else if job.status === 'failed'}
+				<div class="divide-y divide-gray-100 dark:divide-gray-800">
+					{#each syncJobs.slice(0, 8) as job}
+						{@const summary = parseSyncSummary(job.changes_summary)}
+						{@const timeline = getSyncTimeline(job, summary)}
+						{@const warningPreview = getWarningPreview(job)}
+						{@const uiState = getUnifiedSyncUiState(job)}
+						{@const jobElasticUrl = getJobElasticRulesUrl(job)}
+						{@const jobGitUrl = getJobGitRepoUrl()}
+						<div class="flex items-start justify-between px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+							<div class="flex items-start gap-3 min-w-0">
+								<div class="p-1.5 rounded-lg {getStatusBg(job)}">
+									{#if uiState === 'success'}
+										<CheckCircle class="w-4 h-4 text-green-600" />
+									{:else if uiState === 'failed'}
 										<XCircle class="w-4 h-4 text-red-600" />
-									{:else if job.status === 'running'}
+									{:else if uiState === 'in_progress'}
 										<Loader class="w-4 h-4 text-blue-600 animate-spin" />
+									{:else if uiState === 'partial' || uiState === 'conflict'}
+										<AlertTriangle class="w-4 h-4 text-amber-600" />
 									{:else}
-										<Clock class="w-4 h-4 text-yellow-600" />
+										<Clock class="w-4 h-4 text-gray-600 dark:text-gray-400" />
 									{/if}
 								</div>
 								<div class="min-w-0">
@@ -996,8 +1094,8 @@
 												Bidirectional
 											{/if}
 										</span>
-										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {getStatusBg(job.status)} {getStatusColor(job.status)}">
-											{job.status}
+										<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {getUnifiedSyncBadgeClasses(job)} {getStatusColor(job)}">
+											{getUnifiedSyncLabel(job)}
 										</span>
 									</div>
 									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -1006,21 +1104,39 @@
 									<div class="mt-1.5 flex flex-wrap items-center gap-y-1 text-[11px]">
 										{#each timeline as step, index}
 											<div class="flex items-center gap-1">
-												<span class="inline-block h-2 w-2 rounded-full {getTimelineDotClass(step.state)}"></span>
+												<span class="inline-block h-2 w-2 rounded-full transition-colors duration-300 {getTimelineDotClass(step.state)}"></span>
 												<span class="{getTimelineTextClass(step.state)}">{step.label}</span>
 												{#if step.count && step.count > 0}
 													<span class="text-gray-400 dark:text-gray-500">({step.count})</span>
 												{/if}
 											</div>
 											{#if index < timeline.length - 1}
-												<div class="mx-1 h-px w-3 {getTimelineConnectorClass(step.state)}"></div>
+												<div class="mx-1 h-px w-3 transition-colors duration-300 {getTimelineConnectorClass(step.state)}"></div>
 											{/if}
 										{/each}
 									</div>
 									{#if warningPreview}
-										<p class="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
-											Warning: {warningPreview}
-										</p>
+										<div class="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+											<div class="font-medium">Issue: {getErrorHint(warningPreview)}</div>
+											<div class="mt-0.5">{warningPreview}</div>
+											<div class="mt-2 flex flex-wrap items-center gap-2">
+												<button
+													type="button"
+													onclick={() => retrySyncJob(job)}
+													disabled={retryingSyncJobId === job.id || job.status === 'running' || job.status === 'pending'}
+													class="rounded border border-amber-300 px-2 py-0.5 font-medium hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:hover:bg-amber-900/30"
+												>
+													{retryingSyncJobId === job.id ? 'Retrying...' : 'Retry'}
+												</button>
+												{#if jobElasticUrl}
+													<a href={jobElasticUrl} target="_blank" class="underline hover:no-underline">Open Elastic</a>
+												{/if}
+												{#if jobGitUrl}
+													<a href={jobGitUrl} target="_blank" class="underline hover:no-underline">Open Git</a>
+												{/if}
+												<a href="/audit" class="underline hover:no-underline">View Audit</a>
+											</div>
+										</div>
 									{/if}
 								</div>
 							</div>

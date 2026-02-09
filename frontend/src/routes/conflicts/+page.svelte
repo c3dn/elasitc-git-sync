@@ -107,7 +107,7 @@
 							</p>
 						</div>
 						<button
-							on:click={() => openConflictModal(conflict)}
+							onclick={() => openConflictModal(conflict)}
 							class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
 						>
 							Resolve
@@ -168,19 +168,19 @@
 			<!-- Modal Footer -->
 			<div class="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
 				<button
-					on:click={closeModal}
+					onclick={closeModal}
 					class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
 				>
 					Cancel
 				</button>
 				<button
-					on:click={() => resolveConflict('use_git')}
+					onclick={() => resolveConflict('use_git')}
 					class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
 				>
 					Use Git Version
 				</button>
 				<button
-					on:click={() => resolveConflict('use_elastic')}
+					onclick={() => resolveConflict('use_elastic')}
 					class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
 				>
 					Use Elastic Version

@@ -177,7 +177,7 @@
 
 	{#if !showForm}
 		<button
-			on:click={openCreateForm}
+			onclick={openCreateForm}
 			class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
 		>
 			<Plus class="w-5 h-5" />
@@ -255,7 +255,7 @@
 
 				<div class="flex items-center gap-3 pt-4">
 					<button
-						on:click={testConnection}
+						onclick={testConnection}
 						disabled={!url || !apiKey || testingConnection}
 						class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 					>
@@ -267,7 +267,7 @@
 						Test Connection
 					</button>
 					<button
-						on:click={saveInstance}
+						onclick={saveInstance}
 						disabled={loading || !name || !url || (!editingId && !apiKey)}
 						class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 					>
@@ -278,7 +278,7 @@
 						{/if}
 					</button>
 					<button
-						on:click={closeForm}
+						onclick={closeForm}
 						class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
 					>
 						Cancel
@@ -329,21 +329,21 @@
 
 					<div class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
 						<button
-							on:click={() => retestConnection(instance)}
+							onclick={() => retestConnection(instance)}
 							class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm"
 						>
 							<RefreshCw class="w-4 h-4" />
 							Test Connection
 						</button>
 						<button
-							on:click={() => openEditForm(instance)}
+							onclick={() => openEditForm(instance)}
 							class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm"
 						>
 							<Pencil class="w-4 h-4" />
 							Edit
 						</button>
 						<button
-							on:click={() => deleteInstance(instance.id)}
+							onclick={() => deleteInstance(instance.id)}
 							class="ml-auto inline-flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm"
 						>
 							<Trash2 class="w-4 h-4" />

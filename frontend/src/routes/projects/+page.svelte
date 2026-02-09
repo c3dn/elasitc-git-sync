@@ -263,7 +263,7 @@
 					<div class="flex items-center gap-2 p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
 						{#if getTestEnv(project)}
 							<button
-								on:click={() => quickExport(project)}
+								onclick={() => quickExport(project)}
 								disabled={exportingProject === project.id}
 								class="btn flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 hover:shadow-md transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
 							>
@@ -284,7 +284,7 @@
 							Manage
 						</a>
 						<button
-							on:click={() => deleteProject(project.id)}
+							onclick={() => deleteProject(project.id)}
 							class="btn flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg transition-all text-sm"
 						>
 							<Trash2 class="w-4 h-4" />

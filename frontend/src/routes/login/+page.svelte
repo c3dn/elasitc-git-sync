@@ -63,7 +63,6 @@
 						name="email"
 						type="email"
 						required
-						autofocus
 						placeholder="admin@example.com"
 						class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent transition-colors"
 					/>

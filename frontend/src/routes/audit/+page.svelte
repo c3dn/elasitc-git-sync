@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { pb, apiFetch } from '$lib/pocketbase';
 	import {
 		ScrollText,
@@ -8,15 +8,13 @@
 		GitMerge,
 		Upload,
 		Download,
-		RefreshCw,
 		ChevronDown,
 		ChevronRight,
 		AlertCircle,
-		Clock,
 		User,
 		Filter
 	} from 'lucide-svelte';
-	import { formatDistanceToNow, format } from 'date-fns';
+	import { format } from 'date-fns';
 	import type { AuditLog } from '$types';
 
 	let logs: AuditLog[] = [];
@@ -32,9 +30,23 @@
 	// Filters
 	let actionFilter = '';
 	let userFilter = '';
+	let userFilterDraft = '';
+	let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	const FILTER_DEBOUNCE_MS = 350;
+
+	// Cache
+	const AUDIT_CACHE_TTL = 20_000;
+	const auditCache = new Map<string, { ts: number; data: any }>();
 
 	// Expanded rows
 	let expandedRows: Set<string> = new Set();
+
+	// Virtualized rendering
+	let tableScroller: HTMLDivElement | null = null;
+	let scrollTop = 0;
+	let viewportHeight = 560;
+	const ROW_HEIGHT = 64;
+	const OVERSCAN = 10;
 
 	const actionLabels: Record<string, string> = {
 		sync_triggered: 'Sync Triggered',
@@ -76,7 +88,11 @@
 		await loadLogs();
 	});
 
-	async function loadLogs() {
+	onDestroy(() => {
+		if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+	});
+
+	async function loadLogs(force = false) {
 		try {
 			loading = true;
 			error = '';
@@ -85,13 +101,28 @@
 			if (actionFilter) url += `&action=${actionFilter}`;
 			if (userFilter) url += `&user=${encodeURIComponent(userFilter)}`;
 
-			const response = await apiFetch(url);
-			const data = await response.json();
+			const cacheKey = `${page}|${perPage}|${actionFilter}|${userFilter}`;
+			const now = Date.now();
+			let data: any = null;
+
+			if (!force) {
+				const cached = auditCache.get(cacheKey);
+				if (cached && now - cached.ts < AUDIT_CACHE_TTL) {
+					data = cached.data;
+				}
+			}
+
+			if (!data) {
+				const response = await apiFetch(url);
+				data = await response.json();
+				auditCache.set(cacheKey, { ts: now, data });
+			}
 
 			if (data.success) {
 				logs = data.items || [];
 				total = data.total || 0;
 				totalPages = data.total_pages || 0;
+				expandedRows = new Set();
 			} else {
 				error = data.message || 'Failed to load audit logs';
 			}
@@ -103,20 +134,23 @@
 	}
 
 	function applyFilters() {
+		if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
 		page = 1;
-		loadLogs();
+		userFilter = userFilterDraft.trim();
+		void loadLogs();
 	}
 
 	function clearFilters() {
 		actionFilter = '';
+		userFilterDraft = '';
 		userFilter = '';
 		page = 1;
-		loadLogs();
+		void loadLogs();
 	}
 
 	function goToPage(p: number) {
 		page = p;
-		loadLogs();
+		void loadLogs();
 	}
 
 	function toggleRow(id: string) {
@@ -125,7 +159,20 @@
 		} else {
 			expandedRows.add(id);
 		}
-		expandedRows = expandedRows;
+		expandedRows = new Set(expandedRows);
+	}
+
+	function queueFilterApply() {
+		if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+		filterDebounceTimer = setTimeout(() => {
+			applyFilters();
+		}, FILTER_DEBOUNCE_MS);
+	}
+
+	function handleTableScroll() {
+		if (!tableScroller) return;
+		scrollTop = tableScroller.scrollTop;
+		viewportHeight = tableScroller.clientHeight;
 	}
 
 	function formatDetails(details: any): string {
@@ -136,6 +183,14 @@
 			return String(details);
 		}
 	}
+
+	$: virtualized = logs.length > 20 && expandedRows.size === 0;
+	$: startRow = virtualized ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN) : 0;
+	$: visibleRows = virtualized ? Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2 : logs.length;
+	$: endRow = virtualized ? Math.min(logs.length, startRow + visibleRows) : logs.length;
+	$: visibleLogs = virtualized ? logs.slice(startRow, endRow) : logs;
+	$: topSpacer = virtualized ? startRow * ROW_HEIGHT : 0;
+	$: bottomSpacer = virtualized ? Math.max(0, (logs.length - endRow) * ROW_HEIGHT) : 0;
 </script>
 
 <svelte:head>
@@ -159,9 +214,11 @@
 				<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Filters</span>
 			</div>
 
+			<label for="action-filter" class="sr-only">Filter by action</label>
 			<select
+				id="action-filter"
 				bind:value={actionFilter}
-				on:change={applyFilters}
+				onchange={applyFilters}
 				class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
 			>
 				<option value="">All Actions</option>
@@ -175,24 +232,27 @@
 				<option value="change_detected">Change Detected</option>
 			</select>
 
+			<label for="user-filter" class="sr-only">Filter by user</label>
 			<input
+				id="user-filter"
 				type="text"
-				bind:value={userFilter}
-				on:keydown={(e) => e.key === 'Enter' && applyFilters()}
+				bind:value={userFilterDraft}
+				oninput={queueFilterApply}
+				onkeydown={(e) => e.key === 'Enter' && applyFilters()}
 				placeholder="Filter by user..."
 				class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-48"
 			/>
 
 			<button
-				on:click={applyFilters}
+				onclick={applyFilters}
 				class="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
 			>
 				Apply
 			</button>
 
-			{#if actionFilter || userFilter}
+			{#if actionFilter || userFilterDraft}
 				<button
-					on:click={clearFilters}
+					onclick={clearFilters}
 					class="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
 				>
 					Clear
@@ -224,7 +284,7 @@
 		</div>
 	{:else}
 		<div class="card overflow-hidden animate-fade-in" style="animation-delay: 100ms; opacity: 0;">
-			<div class="overflow-x-auto">
+			<div class="overflow-x-auto overflow-y-auto max-h-[72vh]" bind:this={tableScroller} onscroll={handleTableScroll}>
 				<table class="w-full">
 					<thead class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
 						<tr>
@@ -250,18 +310,28 @@
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-						{#each logs as log}
+						{#if topSpacer > 0}
+							<tr aria-hidden="true"><td colspan="7" style={`height: ${topSpacer}px;`}></td></tr>
+						{/if}
+						{#each visibleLogs as log}
 							<tr
-								class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-								on:click={() => toggleRow(log.id)}
+								class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
 							>
 								<td class="px-4 py-3">
 									{#if log.details && Object.keys(log.details).length > 0}
-										{#if expandedRows.has(log.id)}
-											<ChevronDown class="w-4 h-4 text-gray-400" />
-										{:else}
-											<ChevronRight class="w-4 h-4 text-gray-400" />
-										{/if}
+										<button
+											type="button"
+											onclick={() => toggleRow(log.id)}
+											aria-expanded={expandedRows.has(log.id)}
+											aria-controls={"audit-details-" + log.id}
+											class="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+										>
+											{#if expandedRows.has(log.id)}
+												<ChevronDown class="w-4 h-4" />
+											{:else}
+												<ChevronRight class="w-4 h-4" />
+											{/if}
+										</button>
 									{/if}
 								</td>
 								<td class="px-4 py-3 whitespace-nowrap">
@@ -316,7 +386,7 @@
 
 							<!-- Expanded Details Row -->
 							{#if expandedRows.has(log.id) && log.details && Object.keys(log.details).length > 0}
-								<tr class="bg-gray-50 dark:bg-gray-800/50">
+								<tr class="bg-gray-50 dark:bg-gray-800/50" id={"audit-details-" + log.id}>
 									<td colspan="7" class="px-6 py-3">
 										<div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Details</div>
 										<pre class="text-xs text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded p-3 overflow-x-auto">{formatDetails(log.details)}</pre>
@@ -329,6 +399,9 @@
 								</tr>
 							{/if}
 						{/each}
+						{#if bottomSpacer > 0}
+							<tr aria-hidden="true"><td colspan="7" style={`height: ${bottomSpacer}px;`}></td></tr>
+						{/if}
 					</tbody>
 				</table>
 			</div>
@@ -341,14 +414,14 @@
 					</div>
 					<div class="flex items-center gap-1">
 						<button
-							on:click={() => goToPage(page - 1)}
+							onclick={() => goToPage(page - 1)}
 							disabled={page <= 1}
 							class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300 transition-colors"
 						>
 							Previous
 						</button>
 						<button
-							on:click={() => goToPage(page + 1)}
+							onclick={() => goToPage(page + 1)}
 							disabled={page >= totalPages}
 							class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300 transition-colors"
 						>

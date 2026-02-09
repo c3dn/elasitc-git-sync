@@ -415,7 +415,7 @@
 		<div class="flex items-center gap-3">
 			<select
 				bind:value={filterStatus}
-				on:change={loadChanges}
+				onchange={loadChanges}
 				class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary-500"
 			>
 				<option value="pending">Pending</option>
@@ -469,7 +469,7 @@
 					{#if filterStatus === 'pending'}
 						<div class="flex items-center gap-2">
 							<button
-								on:click={() => bulkApprove(batchId)}
+								onclick={() => bulkApprove(batchId)}
 								disabled={actionLoading['bulk-' + batchId]}
 								class="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
 							>
@@ -477,7 +477,7 @@
 								Approve All
 							</button>
 							<button
-								on:click={() => bulkReject(batchId)}
+								onclick={() => bulkReject(batchId)}
 								disabled={actionLoading['bulk-reject-' + batchId]}
 								class="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
 							>
@@ -495,7 +495,7 @@
 							<!-- Change Row -->
 							<div class="flex items-center justify-between">
 								<button
-									on:click={() => toggleExpand(change.id)}
+									onclick={() => toggleExpand(change.id)}
 									class="flex items-center gap-3 text-left flex-1 min-w-0"
 								>
 									{#if expandedIds.has(change.id)}
@@ -516,7 +516,7 @@
 													href={getKibanaRuleUrl(change)}
 													target="_blank"
 													rel="noopener noreferrer"
-													on:click|stopPropagation
+													onclick={(e) => e.stopPropagation()}
 													class="text-gray-400 dark:text-gray-500 hover:text-primary-600 flex-shrink-0"
 													title="Open in Kibana"
 												>
@@ -544,7 +544,7 @@
 								{#if filterStatus === 'pending'}
 									<div class="flex items-center gap-2 ml-4 flex-shrink-0">
 										<button
-											on:click={() => approveChange(change.id)}
+											onclick={() => approveChange(change.id)}
 											disabled={actionLoading[change.id]}
 											class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50"
 											title="Approve"
@@ -552,7 +552,7 @@
 											<CheckCircle2 class="w-5 h-5" />
 										</button>
 										<button
-											on:click={() => rejectChange(change.id)}
+											onclick={() => rejectChange(change.id)}
 											disabled={actionLoading[change.id]}
 											class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
 											title="Reject & Revert"

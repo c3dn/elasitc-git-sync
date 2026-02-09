@@ -248,13 +248,13 @@
 
 				<!-- Sync Mode -->
 				<div>
-					<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					<p class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Sync Mode *
-					</label>
+					</p>
 					<div class="grid grid-cols-2 gap-3">
 						<button
 							type="button"
-							on:click={() => syncMode = 'full'}
+							onclick={() => syncMode = 'full'}
 							class="flex flex-col items-start p-4 border-2 rounded-lg transition-colors
 								{syncMode === 'full' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
 						>
@@ -263,7 +263,7 @@
 						</button>
 						<button
 							type="button"
-							on:click={() => syncMode = 'export_only'}
+							onclick={() => syncMode = 'export_only'}
 							class="flex flex-col items-start p-4 border-2 rounded-lg transition-colors
 								{syncMode === 'export_only' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
 						>
@@ -493,7 +493,7 @@
 		<!-- Navigation -->
 		<div class="flex items-center justify-between mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
 			<button
-				on:click={prevStep}
+				onclick={prevStep}
 				disabled={step === 1}
 				class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 			>
@@ -503,7 +503,7 @@
 
 			{#if step < totalSteps}
 				<button
-					on:click={nextStep}
+					onclick={nextStep}
 					disabled={!canProceed(step)}
 					class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 				>
@@ -512,7 +512,7 @@
 				</button>
 			{:else}
 				<button
-					on:click={createProject}
+					onclick={createProject}
 					disabled={loading || !canProceed(step)}
 					class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 				>

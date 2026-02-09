@@ -330,14 +330,14 @@
 
 				<!-- Sync Mode -->
 				<div>
-					<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+					<p class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 						Sync Mode
-					</label>
+					</p>
 
 					<div class="grid grid-cols-2 gap-3">
 						<button
 							type="button"
-							on:click={() => syncMode = 'full'}
+							onclick={() => syncMode = 'full'}
 							class="flex flex-col items-start p-3 border-2 rounded-lg transition-colors text-left
 								{syncMode === 'full' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
 						>
@@ -346,7 +346,7 @@
 						</button>
 						<button
 							type="button"
-							on:click={() => syncMode = 'export_only'}
+							onclick={() => syncMode = 'export_only'}
 							class="flex flex-col items-start p-3 border-2 rounded-lg transition-colors text-left
 								{syncMode === 'export_only' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}"
 						>
@@ -431,7 +431,7 @@
 				</div>
 				{#if environments.find(e => e.name === 'test')}
 					<button
-						on:click={() => deleteEnvironment('test')}
+						onclick={() => deleteEnvironment('test')}
 						class="text-red-600 hover:text-red-700 text-sm"
 					>
 						<Trash2 class="w-4 h-4" />
@@ -494,7 +494,7 @@
 				</div>
 				{#if environments.find(e => e.name === 'production')}
 					<button
-						on:click={() => deleteEnvironment('production')}
+						onclick={() => deleteEnvironment('production')}
 						class="text-red-600 hover:text-red-700 text-sm"
 					>
 						<Trash2 class="w-4 h-4" />
@@ -546,7 +546,7 @@
 		<!-- Actions -->
 		<div class="flex items-center gap-4">
 			<button
-				on:click={saveProject}
+				onclick={saveProject}
 				disabled={saving || !name || !elasticInstanceId || !gitRepositoryId}
 				class="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
 			>

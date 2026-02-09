@@ -83,7 +83,7 @@
 <div class="relative">
 	<!-- Bell Button -->
 	<button
-		on:click={toggle}
+		onclick={toggle}
 		class="relative p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
 	>
 		<Bell class="w-5 h-5" />
@@ -97,7 +97,7 @@
 	<!-- Dropdown Panel -->
 	{#if isOpen}
 		<!-- Backdrop -->
-		<button class="fixed inset-0 z-40" on:click={close} aria-label="Close notifications"></button>
+		<button class="fixed inset-0 z-40" onclick={close} aria-label="Close notifications"></button>
 
 		<div class="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 max-h-[70vh] flex flex-col">
 			<!-- Header -->
@@ -105,7 +105,7 @@
 				<h3 class="font-semibold text-gray-900 dark:text-gray-100 text-sm">Notifications</h3>
 				{#if unreadCount > 0}
 					<button
-						on:click={markAllAsRead}
+						onclick={markAllAsRead}
 						class="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
 					>
 						<CheckCheck class="w-3.5 h-3.5" />
@@ -124,7 +124,7 @@
 				{:else}
 					{#each notifications as notif (notif.id)}
 						<button
-							on:click={() => {
+							onclick={() => {
 								if (!notif.read) markAsRead(notif.id);
 								if (notif.link) {
 									window.location.href = notif.link;

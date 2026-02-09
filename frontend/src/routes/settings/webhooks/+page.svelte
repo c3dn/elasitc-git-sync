@@ -141,7 +141,7 @@
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Configure webhook endpoints for notifications</p>
 		</div>
 		<button
-			on:click={openNew}
+			onclick={openNew}
 			class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
 		>
 			<Plus class="w-4 h-4" />
@@ -203,21 +203,21 @@
 						</div>
 						<div class="flex items-center gap-1">
 							<button
-								on:click={() => testWebhook(hook.id)}
+								onclick={() => testWebhook(hook.id)}
 								class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
 								title="Send test webhook"
 							>
 								<Send class="w-4 h-4" />
 							</button>
 							<button
-								on:click={() => openEdit(hook)}
+								onclick={() => openEdit(hook)}
 								class="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
 								title="Edit"
 							>
 								<Edit3 class="w-4 h-4" />
 							</button>
 							<button
-								on:click={() => deleteWebhook(hook.id)}
+								onclick={() => deleteWebhook(hook.id)}
 								class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
 								title="Delete"
 							>
@@ -275,14 +275,14 @@
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Events</label>
+						<p class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Events</p>
 						<div class="space-y-2">
 							{#each allEvents as event}
 								<label class="flex items-start gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer">
 									<input
 										type="checkbox"
 										checked={form.events.includes(event.id)}
-										on:change={() => toggleEvent(event.id)}
+										onchange={() => toggleEvent(event.id)}
 										class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
 									/>
 									<div>
@@ -307,13 +307,13 @@
 
 				<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">
 					<button
-						on:click={() => (showForm = false)}
+						onclick={() => (showForm = false)}
 						class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
 					>
 						Cancel
 					</button>
 					<button
-						on:click={saveWebhook}
+						onclick={saveWebhook}
 						disabled={!form.name || !form.url || form.events.length === 0}
 						class="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
 					>

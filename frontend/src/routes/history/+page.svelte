@@ -1,63 +1,132 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { pb } from '$lib/pocketbase';
-	import { Clock, CheckCircle2, XCircle, AlertCircle, Activity } from 'lucide-svelte';
+	import { Clock, CheckCircle2, XCircle, AlertCircle, Activity, Loader, RefreshCw } from 'lucide-svelte';
 	import type { SyncJobExpanded } from '$types';
-	import { formatDistanceToNow, format } from 'date-fns';
+	import { format } from 'date-fns';
+	import {
+		formatSyncSummary,
+		getDirectionLabel,
+		getUnifiedSyncBadgeClasses,
+		getUnifiedSyncLabel,
+		getUnifiedSyncUiState
+	} from '$lib/utils/sync-ui';
 
 	let syncJobs: SyncJobExpanded[] = [];
 	let loading = true;
 	let error = '';
+	let livePolling = false;
+
+	let historyCache: { ts: number; items: SyncJobExpanded[] } | null = null;
+	const HISTORY_CACHE_TTL = 20_000;
+
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	let pollInFlight = false;
+
+	let tableScroller: HTMLDivElement | null = null;
+	let scrollTop = 0;
+	let viewportHeight = 560;
+	const ROW_HEIGHT = 76;
+	const OVERSCAN = 10;
 
 	onMount(async () => {
 		await loadHistory();
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		updatePolling();
 	});
 
-	async function loadHistory() {
+	onDestroy(() => {
+		stopPolling();
+		document.removeEventListener('visibilitychange', handleVisibilityChange);
+	});
+
+	async function loadHistory(force = false) {
 		try {
 			loading = true;
+			const now = Date.now();
+			if (!force && historyCache && now - historyCache.ts < HISTORY_CACHE_TTL) {
+				syncJobs = historyCache.items;
+				updatePolling();
+				return;
+			}
+
 			const result = await pb.collection('sync_jobs').getList(1, 50, {
 				expand: 'project',
 				sort: '-created'
 			});
 			syncJobs = result.items;
+			historyCache = { ts: now, items: result.items };
 		} catch (err: any) {
 			error = err.message;
 		} finally {
 			loading = false;
+			updatePolling();
 		}
 	}
 
-	function getSyncStatusColor(status: string) {
-		const colors: Record<string, string> = {
-			completed: 'bg-green-100 text-green-800',
-			running: 'bg-blue-100 text-blue-800',
-			failed: 'bg-red-100 text-red-800',
-			conflict: 'bg-yellow-100 text-yellow-800',
-			pending: 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
-		};
-		return colors[status] || colors.pending;
+	function hasRunningJobs(): boolean {
+		return syncJobs.some((job) => job.status === 'running' || job.status === 'pending');
 	}
 
-	function getSyncStatusIcon(status: string) {
-		const icons: Record<string, any> = {
-			completed: CheckCircle2,
-			running: Activity,
-			failed: XCircle,
-			conflict: AlertCircle,
-			pending: Clock
-		};
-		return icons[status] || Clock;
+	function startPolling() {
+		if (pollTimer) return;
+		livePolling = true;
+		pollTimer = setInterval(() => {
+			void refreshRunningJobs();
+		}, 3000);
 	}
 
-	function getDirectionLabel(direction: string) {
-		const labels: Record<string, string> = {
-			elastic_to_git: 'Elastic → Git',
-			git_to_elastic: 'Git → Elastic',
-			bidirectional: 'Bidirectional'
-		};
-		return labels[direction] || direction;
+	function stopPolling() {
+		if (!pollTimer) return;
+		clearInterval(pollTimer);
+		pollTimer = null;
+		livePolling = false;
 	}
+
+	function updatePolling() {
+		if (hasRunningJobs()) startPolling();
+		else stopPolling();
+	}
+
+	async function refreshRunningJobs() {
+		if (document.hidden || pollInFlight || !hasRunningJobs()) return;
+		pollInFlight = true;
+		try {
+			await loadHistory(true);
+		} finally {
+			pollInFlight = false;
+		}
+	}
+
+	function handleVisibilityChange() {
+		if (!document.hidden && hasRunningJobs()) {
+			void refreshRunningJobs();
+		}
+	}
+
+	function handleTableScroll() {
+		if (!tableScroller) return;
+		scrollTop = tableScroller.scrollTop;
+		viewportHeight = tableScroller.clientHeight;
+	}
+
+	function getRowIconState(job: SyncJobExpanded): 'success' | 'failed' | 'running' | 'queued' | 'partial' | 'conflict' {
+		const state = getUnifiedSyncUiState(job);
+		if (state === 'success') return 'success';
+		if (state === 'failed') return 'failed';
+		if (state === 'in_progress') return 'running';
+		if (state === 'partial') return 'partial';
+		if (state === 'conflict') return 'conflict';
+		return 'queued';
+	}
+
+	$: virtualized = syncJobs.length > 24;
+	$: startRow = virtualized ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN) : 0;
+	$: visibleRows = virtualized ? Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2 : syncJobs.length;
+	$: endRow = virtualized ? Math.min(syncJobs.length, startRow + visibleRows) : syncJobs.length;
+	$: visibleJobs = virtualized ? syncJobs.slice(startRow, endRow) : syncJobs;
+	$: topSpacer = virtualized ? startRow * ROW_HEIGHT : 0;
+	$: bottomSpacer = virtualized ? Math.max(0, (syncJobs.length - endRow) * ROW_HEIGHT) : 0;
 </script>
 
 <svelte:head>
@@ -66,11 +135,29 @@
 
 <div class="space-y-6">
 	<!-- Header -->
-	<div>
-		<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">Sync History</h1>
-		<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-			View all synchronization jobs and their results
-		</p>
+	<div class="flex items-start justify-between gap-4">
+		<div>
+			<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100">Sync History</h1>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				View all synchronization jobs and their results
+			</p>
+		</div>
+		<div class="flex items-center gap-2">
+			{#if livePolling}
+				<span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+					<Loader class="h-3 w-3 animate-spin" />
+					Live
+				</span>
+			{/if}
+			<button
+				type="button"
+				onclick={() => loadHistory(true)}
+				class="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+			>
+				<RefreshCw class="h-3.5 w-3.5" />
+				Refresh
+			</button>
+		</div>
 	</div>
 
 	{#if loading}
@@ -87,7 +174,7 @@
 		</div>
 	{:else}
 		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-			<div class="overflow-x-auto">
+			<div class="overflow-x-auto overflow-y-auto max-h-[70vh]" bind:this={tableScroller} onscroll={handleTableScroll}>
 				<table class="w-full">
 					<thead class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
 						<tr>
@@ -112,20 +199,29 @@
 						</tr>
 					</thead>
 					<tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-						{#each syncJobs as job}
+						{#if topSpacer > 0}
+							<tr aria-hidden="true"><td colspan="6" style={`height: ${topSpacer}px;`}></td></tr>
+						{/if}
+						{#each visibleJobs as job}
+							{@const iconState = getRowIconState(job)}
 							<tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
 								<td class="px-6 py-4 whitespace-nowrap">
 									<div class="flex items-center gap-2">
-										<svelte:component
-											this={getSyncStatusIcon(job.status)}
-											class="w-4 h-4 text-gray-400 dark:text-gray-500"
-										/>
+										{#if iconState === 'success'}
+											<CheckCircle2 class="w-4 h-4 text-green-500" />
+										{:else if iconState === 'failed'}
+											<XCircle class="w-4 h-4 text-red-500" />
+										{:else if iconState === 'running'}
+											<Activity class="w-4 h-4 text-blue-500 animate-pulse" />
+										{:else if iconState === 'partial' || iconState === 'conflict'}
+											<AlertCircle class="w-4 h-4 text-amber-500" />
+										{:else}
+											<Clock class="w-4 h-4 text-gray-400 dark:text-gray-500" />
+										{/if}
 										<span
-											class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {getSyncStatusColor(
-												job.status
-											)}"
+											class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {getUnifiedSyncBadgeClasses(job)}"
 										>
-											{job.status}
+											{getUnifiedSyncLabel(job)}
 										</span>
 									</div>
 								</td>
@@ -143,18 +239,9 @@
 									</span>
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap">
-									{#if job.changes_summary}
-										<div class="flex items-center gap-3 text-xs">
-											<span class="text-green-600">+{job.changes_summary.added}</span>
-											<span class="text-blue-600">~{job.changes_summary.modified}</span>
-											<span class="text-red-600">-{job.changes_summary.deleted}</span>
-											{#if job.changes_summary.conflicts > 0}
-												<span class="text-yellow-600">⚠ {job.changes_summary.conflicts}</span>
-											{/if}
-										</div>
-									{:else}
-										<span class="text-xs text-gray-400 dark:text-gray-500">-</span>
-									{/if}
+									<div class="text-xs text-gray-600 dark:text-gray-300 max-w-[300px] truncate">
+										{formatSyncSummary(job)}
+									</div>
 								</td>
 								<td class="px-6 py-4 whitespace-nowrap">
 									{#if job.started_at}
@@ -176,13 +263,16 @@
 											{Math.floor(duration / 1000)}s
 										</span>
 									{:else if job.started_at}
-										<span class="text-sm text-blue-600 animate-pulse">Running...</span>
+										<span class="text-sm text-blue-600 animate-pulse">In progress...</span>
 									{:else}
 										<span class="text-xs text-gray-400 dark:text-gray-500">-</span>
 									{/if}
 								</td>
 							</tr>
 						{/each}
+						{#if bottomSpacer > 0}
+							<tr aria-hidden="true"><td colspan="6" style={`height: ${bottomSpacer}px;`}></td></tr>
+						{/if}
 					</tbody>
 				</table>
 			</div>

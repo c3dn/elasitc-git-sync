@@ -78,7 +78,7 @@
 						</div>
 					</div>
 					<button
-						on:click={handleLogout}
+						onclick={handleLogout}
 						class="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
 					>
 						<LogOut class="w-4 h-4" />
@@ -101,7 +101,7 @@
 				<div class="flex items-center justify-end px-8 py-3 gap-2">
 					<!-- Theme Toggle -->
 					<button
-						on:click={toggleTheme}
+						onclick={toggleTheme}
 						class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
 						title="{$themeMode === 'light' ? 'Switch to dark mode' : $themeMode === 'dark' ? 'Switch to system mode' : 'Switch to light mode'}"
 					>
