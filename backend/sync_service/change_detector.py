@@ -209,18 +209,31 @@ def detect_changes(
         }
     """
     errors = []
+    warnings = []
     current_rules_raw = []
 
     cli_rules = []
+    cli_errors = []
     if use_cli:
         cli_rules, cli_errors = _export_via_cli(kibana_url, api_key, space)
-        errors.extend(cli_errors)
 
     # Always fetch via API to catch rules the CLI may have skipped
     # (e.g. rules with KQL parse errors that the CLI can't convert to TOML)
     api_rules, api_errors = _export_via_api(kibana_url, api_key, space)
-    if not cli_rules:
+
+    # Failure handling strategy:
+    # - If CLI fails but API succeeds, continue without surfacing hard errors.
+    # - Only surface hard errors when both exports fail (no data source available).
+    if not cli_rules and api_rules:
+        for e in cli_errors:
+            warnings.append(f"CLI unavailable, using API export: {e}")
+    if not cli_rules and not api_rules:
+        errors.extend(cli_errors)
         errors.extend(api_errors)
+    elif api_errors:
+        # Non-fatal API issues while CLI provided data.
+        for e in api_errors:
+            warnings.append(e)
 
     # Merge: CLI results take priority (have proper TOML), API fills gaps
     cli_rule_ids = set()
@@ -238,7 +251,7 @@ def detect_changes(
             api_supplemented += 1
 
     if api_supplemented > 0:
-        errors.append(f"CLI skipped {api_supplemented} rule(s), supplemented from API")
+        warnings.append(f"CLI skipped {api_supplemented} rule(s), supplemented from API")
 
     # Enrich CLI-exported rules with data from API
     # (CLI rules don't have _exception_items or internal Kibana 'id')
@@ -274,7 +287,7 @@ def detect_changes(
             toml_content = rule_to_toml(rule)
         except Exception as e:
             toml_content = None
-            errors.append(f"TOML conversion failed for {rule_id}: {str(e)}")
+            warnings.append(f"TOML conversion failed for {rule_id}: {str(e)}")
 
         entry = {
             "rule_id": rule_id,
@@ -358,6 +371,7 @@ def detect_changes(
         "changes": changes,
         "current_rules": current_rules_output,
         "errors": errors,
+        "warnings": warnings,
     }
 
 

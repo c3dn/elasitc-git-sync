@@ -67,6 +67,7 @@ def test_detect_changes_happy_path_no_changes(monkeypatch):
 
     assert result["changes"] == []
     assert result["errors"] == []
+    assert result["warnings"] == []
     assert len(result["current_rules"]) == 1
 
 
@@ -128,7 +129,25 @@ def test_detect_changes_cli_skip_is_supplemented_by_api(monkeypatch):
 
     ids = {r["rule_id"] for r in result["current_rules"]}
     assert ids == {"r-1", "r-2"}
-    assert any("CLI skipped 1 rule(s)" in err for err in result["errors"])
+    assert result["errors"] == []
+    assert any("CLI skipped 1 rule(s)" in w for w in result["warnings"])
+    assert result["changes"] == []
+
+
+def test_detect_changes_cli_failure_api_success_is_nonfatal(monkeypatch):
+    rule = _rule("r-api")
+    monkeypatch.setattr(cd, "_export_via_cli", lambda *a, **k: ([], ["CLI export timed out after 120 seconds"]))
+    monkeypatch.setattr(cd, "_export_via_api", lambda *a, **k: ([rule], []))
+
+    result = cd.detect_changes(
+        kibana_url="https://kibana.local",
+        api_key="dummy",
+        space="default",
+        baseline_snapshots=[_snapshot(rule)],
+    )
+
+    assert result["errors"] == []
+    assert any("CLI unavailable, using API export:" in w for w in result["warnings"])
     assert result["changes"] == []
 
 
