@@ -335,6 +335,201 @@
 		}
 	}
 
+	type TimelineState = 'pending' | 'running' | 'success' | 'warning' | 'error' | 'skipped';
+
+	interface TimelineStep {
+		label: string;
+		state: TimelineState;
+		count?: number;
+	}
+
+	type SyncSummaryData = Record<string, unknown>;
+
+	function parseSyncSummary(rawSummary: SyncJob['changes_summary']): SyncSummaryData {
+		if (!rawSummary) return {};
+		if (typeof rawSummary === 'string') {
+			try {
+				const parsed = JSON.parse(rawSummary);
+				return parsed && typeof parsed === 'object' ? parsed as SyncSummaryData : {};
+			} catch {
+				return {};
+			}
+		}
+		return typeof rawSummary === 'object' ? rawSummary as SyncSummaryData : {};
+	}
+
+	function asCount(value: unknown): number {
+		const num = Number(value);
+		return Number.isFinite(num) && num > 0 ? num : 0;
+	}
+
+	function isExportDirection(direction: SyncJob['direction']): boolean {
+		return direction === 'elastic_to_git' || direction === 'bidirectional';
+	}
+
+	function isImportDirection(direction: SyncJob['direction']): boolean {
+		return direction === 'git_to_elastic' || direction === 'bidirectional';
+	}
+
+	function getSummaryWarningCount(summary: SyncSummaryData): number {
+		return asCount(summary.import_errors) + asCount(summary.delete_errors) + asCount(summary.errors);
+	}
+
+	function formatSyncSummary(job: SyncJob, summary: SyncSummaryData): string {
+		const parts: string[] = [];
+		const changesDetected = asCount(summary.changes_detected);
+		const pendingCreated = asCount(summary.pending_created);
+		const pendingUpdated = asCount(summary.pending_updated);
+		const exported = asCount(summary.exported);
+		const imported = asCount(summary.imported);
+		const deleted = asCount(summary.deleted);
+		const warningCount = getSummaryWarningCount(summary);
+
+		if (changesDetected > 0) {
+			parts.push(`${changesDetected} ${changesDetected === 1 ? 'change' : 'changes'} detected`);
+		}
+		if (pendingCreated > 0) {
+			parts.push(`${pendingCreated} pending review`);
+		}
+		if (pendingUpdated > 0) {
+			parts.push(`${pendingUpdated} review item${pendingUpdated === 1 ? '' : 's'} updated`);
+		}
+		if (exported > 0) {
+			parts.push(`${exported} exported`);
+		}
+		if (imported > 0) {
+			parts.push(`${imported} imported`);
+		}
+		if (deleted > 0) {
+			parts.push(`${deleted} deleted`);
+		}
+		if (warningCount > 0) {
+			parts.push(`${warningCount} ${warningCount === 1 ? 'warning' : 'warnings'}`);
+		}
+
+		if (parts.length === 0) {
+			if (job.status === 'failed') return 'Sync failed before processing finished';
+			if (job.status === 'running') return 'Sync in progress';
+			return 'No changes';
+		}
+
+		return parts.join(', ');
+	}
+
+	function getSyncTimeline(job: SyncJob, summary: SyncSummaryData): TimelineStep[] {
+		const running = job.status === 'running';
+		const pending = job.status === 'pending';
+		const failed = job.status === 'failed' || job.status === 'conflict';
+		const exportFlow = isExportDirection(job.direction);
+		const importFlow = isImportDirection(job.direction);
+		const changesDetected = asCount(summary.changes_detected);
+		const pendingCount = asCount(summary.pending_created) + asCount(summary.pending_updated);
+		const importCount = asCount(summary.imported);
+		const deleteCount = asCount(summary.deleted);
+		const warningCount = getSummaryWarningCount(summary);
+		const hasPartialProgress = changesDetected > 0 || pendingCount > 0 || importCount > 0 || deleteCount > 0;
+		const completedWithWarnings = job.status === 'completed' && (warningCount > 0 || !!job.error_message);
+
+		const steps: TimelineStep[] = [];
+
+		steps.push({
+			label: 'Fetch source',
+			state: pending ? 'pending' : running ? 'running' : failed && !hasPartialProgress ? 'error' : 'success'
+		});
+
+		if (exportFlow) {
+			steps.push({
+				label: 'Detect',
+				state: pending
+					? 'pending'
+					: running && changesDetected === 0
+						? 'running'
+						: failed && changesDetected === 0
+							? 'error'
+							: 'success',
+				count: changesDetected
+			});
+
+			steps.push({
+				label: 'Queue review',
+				state: changesDetected === 0
+					? 'skipped'
+					: pending
+						? 'pending'
+						: running && pendingCount === 0
+							? 'running'
+							: pendingCount > 0
+								? 'success'
+								: failed
+									? 'error'
+									: 'warning',
+				count: pendingCount
+			});
+		}
+
+		if (importFlow) {
+			const appliedCount = importCount + deleteCount;
+			steps.push({
+				label: 'Import target',
+				state: pending
+					? 'pending'
+					: running && appliedCount === 0
+						? 'running'
+						: failed && appliedCount === 0
+							? 'error'
+							: warningCount > 0
+								? 'warning'
+								: 'success',
+				count: appliedCount
+			});
+		}
+
+		steps.push({
+			label: 'Finalize',
+			state: pending ? 'pending' : running ? 'running' : failed ? 'error' : completedWithWarnings ? 'warning' : 'success'
+		});
+
+		return steps;
+	}
+
+	function getTimelineDotClass(state: TimelineState): string {
+		switch (state) {
+			case 'success': return 'bg-green-500';
+			case 'warning': return 'bg-amber-500';
+			case 'error': return 'bg-red-500';
+			case 'running': return 'bg-blue-500';
+			case 'pending': return 'bg-slate-300 dark:bg-slate-600';
+			default: return 'bg-gray-300 dark:bg-gray-600';
+		}
+	}
+
+	function getTimelineTextClass(state: TimelineState): string {
+		switch (state) {
+			case 'success': return 'text-green-700 dark:text-green-400';
+			case 'warning': return 'text-amber-700 dark:text-amber-400';
+			case 'error': return 'text-red-700 dark:text-red-400';
+			case 'running': return 'text-blue-700 dark:text-blue-400';
+			case 'pending': return 'text-slate-600 dark:text-slate-400';
+			default: return 'text-gray-500 dark:text-gray-500';
+		}
+	}
+
+	function getTimelineConnectorClass(state: TimelineState): string {
+		switch (state) {
+			case 'success': return 'bg-green-200 dark:bg-green-900/40';
+			case 'warning': return 'bg-amber-200 dark:bg-amber-900/40';
+			case 'error': return 'bg-red-200 dark:bg-red-900/40';
+			case 'running': return 'bg-blue-200 dark:bg-blue-900/40';
+			default: return 'bg-gray-200 dark:bg-gray-700';
+		}
+	}
+
+	function getWarningPreview(job: SyncJob): string {
+		if (!job.error_message || job.status === 'failed') return '';
+		const first = job.error_message.split(';').map(s => s.trim()).find(Boolean) || '';
+		return first.length > 140 ? `${first.slice(0, 140)}...` : first;
+	}
+
 	function formatRelativeTime(dateStr: string): string {
 		if (!dateStr) return 'Never';
 		const date = new Date(dateStr);
@@ -772,13 +967,16 @@
 					<p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Start by exporting rules from your environment.</p>
 				</div>
 			{:else}
-				<div class="divide-y divide-gray-100 dark:divide-gray-800">
-					{#each syncJobs.slice(0, 8) as job}
-						<div class="flex items-center justify-between px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-							<div class="flex items-center gap-3 min-w-0">
-								<div class="p-1.5 rounded-lg {getStatusBg(job.status)}">
-									{#if job.status === 'completed'}
-										<CheckCircle class="w-4 h-4 text-green-600" />
+					<div class="divide-y divide-gray-100 dark:divide-gray-800">
+						{#each syncJobs.slice(0, 8) as job}
+							{@const summary = parseSyncSummary(job.changes_summary)}
+							{@const timeline = getSyncTimeline(job, summary)}
+							{@const warningPreview = getWarningPreview(job)}
+							<div class="flex items-start justify-between px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+								<div class="flex items-center gap-3 min-w-0">
+									<div class="p-1.5 rounded-lg {getStatusBg(job.status)}">
+										{#if job.status === 'completed'}
+											<CheckCircle class="w-4 h-4 text-green-600" />
 									{:else if job.status === 'failed'}
 										<XCircle class="w-4 h-4 text-red-600" />
 									{:else if job.status === 'running'}
@@ -802,30 +1000,26 @@
 											{job.status}
 										</span>
 									</div>
-									{#if job.changes_summary}
-										{@const summary = typeof job.changes_summary === 'string' ? JSON.parse(job.changes_summary) : job.changes_summary}
-										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-											{#if summary.changes_detected}
-												{summary.changes_detected} {summary.changes_detected === 1 ? 'change' : 'changes'} detected
+									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+										{formatSyncSummary(job, summary)}
+									</p>
+									<div class="mt-1.5 flex flex-wrap items-center gap-y-1 text-[11px]">
+										{#each timeline as step, index}
+											<div class="flex items-center gap-1">
+												<span class="inline-block h-2 w-2 rounded-full {getTimelineDotClass(step.state)}"></span>
+												<span class="{getTimelineTextClass(step.state)}">{step.label}</span>
+												{#if step.count && step.count > 0}
+													<span class="text-gray-400 dark:text-gray-500">({step.count})</span>
+												{/if}
+											</div>
+											{#if index < timeline.length - 1}
+												<div class="mx-1 h-px w-3 {getTimelineConnectorClass(step.state)}"></div>
 											{/if}
-											{#if summary.pending_created}
-												{#if summary.changes_detected}, {/if}{summary.pending_created} pending review
-											{/if}
-											{#if summary.exported}
-												{#if summary.changes_detected || summary.pending_created}, {/if}{summary.exported} exported
-											{/if}
-											{#if summary.imported}
-												{#if summary.changes_detected || summary.pending_created || summary.exported}, {/if}{summary.imported} imported
-											{/if}
-											{#if summary.deleted}
-												, {summary.deleted} deleted
-											{/if}
-											{#if summary.errors}
-												, {summary.errors} {summary.errors === 1 ? 'error' : 'errors'}
-											{/if}
-											{#if !summary.changes_detected && !summary.pending_created && !summary.exported && !summary.imported && !summary.deleted}
-												No changes
-											{/if}
+										{/each}
+									</div>
+									{#if warningPreview}
+										<p class="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+											Warning: {warningPreview}
 										</p>
 									{/if}
 								</div>
